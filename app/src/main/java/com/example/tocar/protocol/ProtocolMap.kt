@@ -3,10 +3,10 @@ package com.example.tocar.protocol
 data class ProtocolMap(
     val powerToggle: ByteArray = byteArrayOf(),
     val muteToggle: ByteArray = byteArrayOf(),
-    val modeNext: ByteArray = byteArrayOf(),
+    val modeNext: ByteArray = byteArrayOf(0x01, 0x01),
     val playPause: ByteArray = byteArrayOf(),
-    val nextTrack: ByteArray = byteArrayOf(),
-    val previousTrack: ByteArray = byteArrayOf(),
+    val nextTrack: ByteArray = byteArrayOf(0x03, 0x02, 0x00),
+    val previousTrack: ByteArray = byteArrayOf(0x03, 0x01, 0x00),
     val introToggle: ByteArray = byteArrayOf(),
     val repeatToggle: ByteArray = byteArrayOf(),
     val randomToggle: ByteArray = byteArrayOf(),
@@ -69,7 +69,7 @@ class CommandEncoder(
         }
 
         return packet?.takeIf { it.isNotEmpty() }?.let {
-            EncodedCommand(bytes = it, source = command.displayName())
+            EncodedCommand(bytes = it, source = displayName(command))
         }
     }
 

@@ -42,8 +42,8 @@ class RadioRepository(
         applyOptimisticState(command)
         val encoded = encoder.encode(command)
         if (encoded == null) {
-            logger.blocked("${command.displayName()} aguardando mapeamento do protocolo")
-            _radioState.update { it.copy(lastMessage = "${command.displayName()}: bytes ainda nao mapeados") }
+            logger.blocked("${displayName(command)} aguardando mapeamento do protocolo")
+            _radioState.update { it.copy(lastMessage = "${displayName(command)}: bytes ainda nao mapeados") }
             return
         }
 
@@ -53,7 +53,7 @@ class RadioRepository(
                 logger.tx(encoded.source, encoded.bytes)
                 _radioState.update { it.copy(lastMessage = "Enviado: ${encoded.source}") }
             }.onFailure { error ->
-                logger.blocked("Falha TX ${command.displayName()}: ${error.message}")
+                logger.blocked("Falha TX ${displayName(command)}: ${error.message}")
                 _radioState.update { it.copy(lastMessage = "Falha ao enviar: ${error.message ?: "SPP desconectado"}") }
             }
         }
@@ -66,9 +66,9 @@ class RadioRepository(
     private fun applyOptimisticState(command: RadioCommand) {
         _radioState.update { state ->
             when (command) {
-                RadioCommand.VolumeUp -> state.copy(volume = (state.volume + 1).coerceAtMost(40))
+                RadioCommand.VolumeUp -> state.copy(volume = (state.volume + 1).coerceAtMost(SAFE_VOLUME_MAX))
                 RadioCommand.VolumeDown -> state.copy(volume = (state.volume - 1).coerceAtLeast(0))
-                is RadioCommand.SetVolume -> state.copy(volume = command.value.coerceIn(0, 40))
+                is RadioCommand.SetVolume -> state.copy(volume = command.value.coerceIn(0, SAFE_VOLUME_MAX))
                 is RadioCommand.SetMode -> state.copy(mode = command.mode)
                 is RadioCommand.SetEq -> state.copy(eqPreset = command.preset)
                 is RadioCommand.SetBass -> state.copy(bass = command.value.coerceIn(RadioRanges.BASS_MIN, RadioRanges.BASS_MAX))
@@ -105,5 +105,9 @@ class RadioRepository(
                 is RadioCommand.Raw -> state
             }
         }
+    }
+
+    private companion object {
+        const val SAFE_VOLUME_MAX = 5
     }
 }

@@ -18,6 +18,8 @@
 - Android 12+: `BLUETOOTH_CONNECT` e `BLUETOOTH_SCAN`.
 - Android 11 ou menor: `BLUETOOTH`, `BLUETOOTH_ADMIN` e `ACCESS_FINE_LOCATION`.
 - Voz: `RECORD_AUDIO`.
+- Android 13+: `POST_NOTIFICATIONS` para exibir notificacao do servico de voz.
+- Voz em segundo plano: `FOREGROUND_SERVICE` e `FOREGROUND_SERVICE_MICROPHONE`.
 
 ## Riscos conhecidos
 
@@ -27,6 +29,7 @@
 - Comando direto "musica X da pasta Y" ainda e logico; nao deve ser enviado ate confirmacao no protocolo.
 - `Proxima sintonia` e `sintonia anterior` sao comandos separados de `proxima musica`, pois FM pode usar bytes diferentes de USB/BT.
 - A escuta continua pode consumir bateria e depende das politicas do fabricante do Android.
+- Voz em segundo plano e experimental. Se o Android bloquear microfone com tela apagada, usar o botao `Ouvir comando` dentro do app.
 
 ## Recomendacao de teste
 

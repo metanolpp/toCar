@@ -36,11 +36,11 @@ sealed interface RadioCommand {
     data class Raw(val bytes: ByteArray) : RadioCommand
 }
 
-fun RadioCommand.displayName(): String = when (this) {
+fun displayName(command: RadioCommand): String = when (command) {
     RadioCommand.PowerToggle -> "Power"
     RadioCommand.MuteToggle -> "Mute"
     RadioCommand.ModeNext -> "Mode"
-    is RadioCommand.SetMode -> "Modo ${mode.label}"
+    is RadioCommand.SetMode -> "Modo ${command.mode.label}"
     RadioCommand.PlayPause -> "Play/Pause"
     RadioCommand.NextTrack -> "Proxima faixa"
     RadioCommand.PreviousTrack -> "Faixa anterior"
@@ -55,19 +55,19 @@ fun RadioCommand.displayName(): String = when (this) {
     RadioCommand.DirectoryNext -> "DIR+"
     RadioCommand.VolumeUp -> "Volume +"
     RadioCommand.VolumeDown -> "Volume -"
-    is RadioCommand.SetVolume -> "Volume $value"
+    is RadioCommand.SetVolume -> "Volume ${command.value}"
     RadioCommand.Band -> "Band"
     RadioCommand.Ams -> "AMS"
     RadioCommand.Clock -> "Clock"
     RadioCommand.CallAnswerOrRedial -> "Atender/rediscar"
     RadioCommand.CallEnd -> "Encerrar chamada"
-    is RadioCommand.SetEq -> "EQ ${preset.label}"
-    is RadioCommand.SetBass -> "BAS $value"
-    is RadioCommand.SetTreble -> "TRE $value"
-    is RadioCommand.SetBalance -> "BAL $value"
-    is RadioCommand.SetFader -> "FAD $value"
-    is RadioCommand.SetLoudness -> "LOUD ${if (enabled) "ON" else "OFF"}"
-    is RadioCommand.SetPanelColor -> "Cor ${color.label}"
-    is RadioCommand.SelectFolderTrack -> "Pasta $folder, musica $track"
-    is RadioCommand.Raw -> "Raw ${bytes.size} bytes"
+    is RadioCommand.SetEq -> "EQ ${command.preset.label}"
+    is RadioCommand.SetBass -> "BAS ${command.value}"
+    is RadioCommand.SetTreble -> "TRE ${command.value}"
+    is RadioCommand.SetBalance -> "BAL ${command.value}"
+    is RadioCommand.SetFader -> "FAD ${command.value}"
+    is RadioCommand.SetLoudness -> "LOUD ${if (command.enabled) "ON" else "OFF"}"
+    is RadioCommand.SetPanelColor -> "Cor ${command.color.label}"
+    is RadioCommand.SelectFolderTrack -> "Pasta ${command.folder}, musica ${command.track}"
+    is RadioCommand.Raw -> "Raw ${command.bytes.size} bytes"
 }

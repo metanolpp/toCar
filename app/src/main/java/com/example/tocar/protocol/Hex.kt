@@ -4,8 +4,8 @@ fun ByteArray.toHexString(): String = joinToString(" ") { byte ->
     "%02X".format(byte.toInt() and 0xFF)
 }
 
-fun String.hexToByteArraySafe(maxBytes: Int = CommandEncoder.MAX_RAW_PACKET_SIZE): Result<ByteArray> = runCatching {
-    val clean = trim()
+fun parseHexPacket(hex: String, maxBytes: Int = CommandEncoder.MAX_RAW_PACKET_SIZE): Result<ByteArray> = runCatching {
+    val clean = hex.trim()
         .replace("0x", "", ignoreCase = true)
         .replace(Regex("[^A-Fa-f0-9]"), "")
 
@@ -17,4 +17,3 @@ fun String.hexToByteArraySafe(maxBytes: Int = CommandEncoder.MAX_RAW_PACKET_SIZE
         .map { it.toInt(16).toByte() }
         .toByteArray()
 }
-

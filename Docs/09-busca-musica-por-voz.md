@@ -24,6 +24,8 @@ Encontrei 3 musicas parecidas. Qual voce quer? 1...
 
 A proxima resposta `1`, `2`, `3`, `primeira`, `segunda` ou `terceira` escolhe a faixa.
 
+O mesmo fluxo tambem e usado pelo servico de voz em segundo plano.
+
 ## Estado atual
 
 O catalogo atual e demonstrativo e fica em `MusicSearchEngine.demoCatalog()`.
@@ -40,3 +42,9 @@ Mesmo quando a busca encontra uma musica, o envio real ainda depende do pacote c
 
 Hoje o comando e logico e fica bloqueado no `CommandEncoder`, porque enviar bytes inventados poderia causar comportamento inesperado no radio.
 
+## Proximos passos
+
+- Descobrir se o CarLive consegue listar USB/SD.
+- Criar `MusicCatalogRepository` alimentado por resposta real do radio.
+- Substituir o catalogo demonstrativo pelo catalogo real.
+- Mapear pacote real de `SelectFolderTrack`, caso exista.

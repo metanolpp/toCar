@@ -3,6 +3,8 @@
 ## Premissa
 O manual mostra o que o rádio faz, mas não mostra os bytes enviados pelo CarLive. Por isso, este arquivo define os comandos funcionais e deixa os pacotes como `TODO` até a captura real.
 
+Na implementacao atual, `CommandEncoder.encode()` retorna `null` para comandos sem bytes confirmados. O `RadioRepository` registra o bloqueio no log e nao envia bytes inventados ao radio.
+
 ## Comandos principais
 
 ```kotlin
@@ -105,10 +107,10 @@ object RadioRanges {
 
 ```kotlin
 class CommandEncoder(
-    private val protocolMap: ProtocolMap
+    private val protocolMap: ProtocolMap = ProtocolMap()
 ) {
-    fun encode(command: RadioCommand): ByteArray {
-        return when (command) {
+    fun encode(command: RadioCommand): EncodedCommand? {
+        val packet = when (command) {
             RadioCommand.PowerToggle -> protocolMap.powerToggle
             RadioCommand.MuteToggle -> protocolMap.muteToggle
             RadioCommand.ModeNext -> protocolMap.modeNext
@@ -116,6 +118,8 @@ class CommandEncoder(
             RadioCommand.PlayPause -> protocolMap.playPause
             RadioCommand.NextTrack -> protocolMap.nextTrack
             RadioCommand.PreviousTrack -> protocolMap.previousTrack
+            RadioCommand.NextStation -> null
+            RadioCommand.PreviousStation -> null
             RadioCommand.IntroToggle -> protocolMap.introToggle
             RadioCommand.RepeatToggle -> protocolMap.repeatToggle
             RadioCommand.RandomToggle -> protocolMap.randomToggle
@@ -127,7 +131,7 @@ class CommandEncoder(
 
             RadioCommand.VolumeUp -> protocolMap.volumeUp
             RadioCommand.VolumeDown -> protocolMap.volumeDown
-            is RadioCommand.SetVolume -> encodeVolume(command.value)
+            is RadioCommand.SetVolume -> null
 
             RadioCommand.Band -> protocolMap.band
             RadioCommand.Ams -> protocolMap.ams
@@ -136,23 +140,23 @@ class CommandEncoder(
             RadioCommand.CallAnswerOrRedial -> protocolMap.callAnswerOrRedial
             RadioCommand.CallEnd -> protocolMap.callEnd
 
-            is RadioCommand.SetMode -> encodeMode(command.mode)
-            is RadioCommand.SetEq -> encodeEq(command.preset)
-            is RadioCommand.SetBass -> encodeSignedSetting("BAS", command.value)
-            is RadioCommand.SetTreble -> encodeSignedSetting("TRE", command.value)
-            is RadioCommand.SetBalance -> encodeSignedSetting("BAL", command.value)
-            is RadioCommand.SetFader -> encodeSignedSetting("FAD", command.value)
-            is RadioCommand.SetLoudness -> encodeLoudness(command.enabled)
+            is RadioCommand.SetMode -> null
+            is RadioCommand.SetEq -> null
+            is RadioCommand.SetBass -> null
+            is RadioCommand.SetTreble -> null
+            is RadioCommand.SetBalance -> null
+            is RadioCommand.SetFader -> null
+            is RadioCommand.SetLoudness -> null
+            is RadioCommand.SetPanelColor -> null
+            is RadioCommand.SelectFolderTrack -> null
 
-            is RadioCommand.Raw -> command.bytes
+            is RadioCommand.Raw -> command.bytes.takeIf { it.isNotEmpty() && it.size <= 32 }
+        }
+
+        return packet?.takeIf { it.isNotEmpty() }?.let {
+            EncodedCommand(bytes = it, source = command.displayName())
         }
     }
-
-    private fun encodeVolume(value: Int): ByteArray = TODO("Capturar pacote real")
-    private fun encodeMode(mode: RadioMode): ByteArray = TODO("Capturar pacote real")
-    private fun encodeEq(preset: EqPreset): ByteArray = TODO("Capturar pacote real")
-    private fun encodeSignedSetting(type: String, value: Int): ByteArray = TODO("Capturar pacote real")
-    private fun encodeLoudness(enabled: Boolean): ByteArray = TODO("Capturar pacote real")
 }
 ```
 
@@ -191,13 +195,21 @@ O app aceita frases como:
 musica 1 da pasta 4
 pasta 4 musica 1
 proxima musica
-modo usb
-volume mais
-eq rock
-proxima musica
 musica anterior
 proxima sintonia
 sintonia anterior
+radio FM
+USB
+bluetooth
+auxiliar
+modo usb
+volume mais
+eq rock
+loud on
+loud off
+cor azul
+aplicar preset estrada
+quero rhythm of the night
 ```
 
 Essas frases sao convertidas para `RadioCommand`. No caso de `SelectFolderTrack(folder, track)`, o comando fica logico e bloqueado para envio enquanto nao houver pacote confirmado no CarLive ou no HCI Snoop Log.
@@ -231,6 +243,8 @@ Cor do painel exige cautela extra porque o manual cita `COR/AUTO` no painel, mas
 | Play/Pause | USB/SD/BT | Pendente | TODO | Botão 1 |
 | Previous | Painel/app | Pendente | TODO | Faixa anterior |
 | Next | Painel/app | Pendente | TODO | Próxima faixa |
+| Próxima sintonia | Rádio FM | Pendente | TODO | Separado de NextTrack |
+| Sintonia anterior | Rádio FM | Pendente | TODO | Separado de PreviousTrack |
 | INT | USB/SD | Pendente | TODO | Introdução 10s |
 | RPT | USB/SD | Pendente | TODO | RPT ONE/DIR/ALL |
 | RDM | USB/SD | Pendente | TODO | Aleatório |
@@ -244,5 +258,7 @@ Cor do painel exige cautela extra porque o manual cita `COR/AUTO` no painel, mas
 | FAD | SEL | Pendente | TODO | traseira/frente |
 | EQ | SEL/app | Pendente | TODO | FLAT/ROCK/POP/CLASSIC/JAZZ/OFF |
 | LOUD | SEL | Pendente | TODO | ON/OFF |
+| Cor painel | Painel/COR | Pendente | TODO | Usar somente se confirmado |
+| Pasta/música direta | USB/SD | Pendente | TODO | Depende de protocolo |
 | AMS | App/controle | Pendente | TODO | Auto scan FM |
 | BAND | FM/BT | Pendente | TODO | FM1/FM2/FM3 e atender/rediscagem |

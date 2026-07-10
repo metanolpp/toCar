@@ -13,10 +13,16 @@ val CARLIVE_EXTRA_UUID: UUID = UUID.fromString("258EAFA5-E914-47DA-95CA-C5AB0DC8
 data class BluetoothDeviceInfo(
     val name: String,
     val address: String,
-    val bonded: Boolean
+    val bonded: Boolean,
+    val transport: BluetoothTransport = BluetoothTransport.Classic
 ) {
     val isLikelyRoadstar: Boolean
         get() = ROADSTAR_NAMES.any { name.contains(it, ignoreCase = true) }
+}
+
+enum class BluetoothTransport {
+    Classic,
+    Ble
 }
 
 sealed interface BluetoothConnectionState {
@@ -29,4 +35,4 @@ sealed interface BluetoothConnectionState {
     data class Error(val message: String) : BluetoothConnectionState
 }
 
-private val ROADSTAR_NAMES = listOf("CAR-BT", "RS-2751", "CAR KIT", "CAR KIT-APP")
+private val ROADSTAR_NAMES = listOf("CAR-BT", "RS-2751", "CAR KIT", "CAR KIT-APP", "APP")

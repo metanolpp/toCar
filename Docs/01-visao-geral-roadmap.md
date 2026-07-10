@@ -27,59 +27,107 @@ O manual descreve funções e comportamento, mas não informa os bytes/protocolo
 2. Comandos ainda desconhecidos que dependem da captura Bluetooth HCI Snoop Log.
 3. Interface e arquitetura já implementáveis sem conhecer todos os bytes.
 
+## Estado atual
+
+Ja existe uma primeira versao Android com:
+
+- Interface Compose com abas `Conexao`, `Controle`, `USB/SD`, `Audio` e `Log`.
+- Bluetooth SPP separado da UI.
+- Filtro por `CAR-BT`, `RS-2751BR` e `CAR KIT-APP`.
+- Protocolo logico com `RadioCommand` e `CommandEncoder`.
+- Bloqueio seguro para comandos sem bytes confirmados.
+- Campo Raw limitado para testar pacotes capturados.
+- Comandos de voz para fonte, volume, faixa, sintonia, EQ, LOUD, cor e presets.
+- Busca de musica por voz com catalogo demonstrativo.
+- Presets locais de EQ/BAS/TRE/BAL/FAD/LOUD/cor.
+- Voz em segundo plano via Foreground Service, marcada como experimental.
+
+## Achados do APK CarLive
+
+O APK `carlive-2-284.apk` analisado localmente indica:
+
+- Pacote: `zddz.app.carlive`.
+- Versao: `2.284`.
+- Uso de Bluetooth classico e BLE.
+- Pacote interno relevante: `com.zddz.bt`.
+- UUIDs encontrados:
+
+```text
+0000fff0-0000-1000-8000-00805f9b34fb
+0000fff1-0000-1000-8000-00805f9b34fb
+258eafa5-e914-47da-95ca-c5ab0dc85b11
+```
+
+Esses UUIDs ajudam na engenharia reversa, mas nao substituem a captura dos bytes de comando.
+
 ## Fases
 
 ### Fase 0 — Estrutura inicial
-- Criar projeto Android Kotlin.
-- Ativar Jetpack Compose + Material 3.
-- Criar navegação entre telas.
-- Criar camada Bluetooth desacoplada da UI.
-- Criar camada de protocolo com comandos ainda vazios.
+- Status: implementada.
+- Projeto Android Kotlin criado.
+- Jetpack Compose + Material 3 ativo.
+- Navegacao por abas implementada.
+- Camada Bluetooth desacoplada da UI.
+- Camada de protocolo com comandos logicos e encoder seguro.
 
 ### Fase 1 — Bluetooth SPP
-- Permissões Android 13+.
-- Scan de dispositivos.
-- Filtro por CAR-BT, RS-2751BR e CAR KIT-APP.
-- Pareamento/conexão SPP.
-- Leitura e escrita em InputStream/OutputStream.
-- Tela de log TX/RX em hexadecimal.
+- Status: parcialmente implementada.
+- Permissoes Android 13+ implementadas.
+- Listagem de pareados implementada.
+- Filtro por CAR-BT, RS-2751BR e CAR KIT-APP implementado.
+- Conexao SPP implementada.
+- Leitura/escrita por `InputStream`/`OutputStream` implementada.
+- Tela de log TX/RX em hexadecimal implementada.
+- Scan ativo ainda pode ser refinado.
 
 ### Fase 2 — Controles básicos
+- Status: interface e comandos logicos implementados.
 - Power.
 - Mode.
 - Volume + / Volume -.
 - Play/Pause.
-- Próximo/Anterior.
+- Proximo/Anterior.
+- Proxima sintonia / Sintonia anterior.
 - Mute.
 - Banda FM.
 - Atender/encerrar chamada.
+- Envio real depende dos bytes confirmados.
 
 ### Fase 3 — USB/SD e reprodução
+- Status: interface e comandos logicos implementados.
 - INT.
 - RPT.
 - RDM.
 - -10 / +10.
 - DIR- / DIR+.
-- Leitura posterior de diretórios, se o protocolo permitir.
+- Busca por voz em catalogo demonstrativo.
+- Leitura real de diretorios continua pendente.
 
 ### Fase 4 — Áudio
+- Status: interface, presets e comandos logicos implementados.
 - BAS.
 - TRE.
 - BAL.
 - FAD.
 - EQ.
 - LOUD.
-- ST.
+- Presets locais.
+- ST ainda deve ser confirmado.
 
 ### Fase 5 — Cores
-- Implementar com cautela.
+- Status: preset e comando logico implementados com cautela.
+- O app permite salvar cor no preset.
+- O comando `SetPanelColor` existe, mas permanece bloqueado ate captura confirmada.
 - O manual indica AUTO/COR no painel, mas informa que RGB no aplicativo não está disponível para este modelo.
-- Priorizar somente comandos confirmados por captura.
 
 ### Fase 6 — Voz
-- Speech-to-Text Android.
-- Tradução de frases para RadioCommand.
-- Envio pelo CommandEncoder.
+- Status: implementada e em expansao.
+- Speech-to-Text Android por intent na UI.
+- `SpeechRecognizer` em Foreground Service para segundo plano, experimental.
+- Traducao de frases para `RadioCommand`.
+- Busca de musica por voz.
+- Aplicacao de presets por voz.
+- Envio pelo `CommandEncoder`, respeitando bloqueios de seguranca.
 
 ## Resultado esperado
 Um app modular onde a interface já existe e os bytes são adicionados gradualmente conforme forem descobertos.

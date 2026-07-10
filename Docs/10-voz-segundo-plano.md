@@ -4,6 +4,8 @@
 
 Permitir comandos de voz mesmo com o app fora da tela principal, inclusive com o celular bloqueado quando o Android permitir.
 
+Este recurso e experimental. Se o Android ou o fabricante bloquear o microfone em segundo plano, o fluxo principal continua sendo o botao `Ouvir comando` dentro do app.
+
 ## Implementacao
 
 Foi criado um `Foreground Service`:
@@ -58,6 +60,8 @@ O app solicita:
 - `FOREGROUND_SERVICE_MICROPHONE`
 - Permissoes Bluetooth ja usadas pelo app.
 
+No Android 13+, sem permissao de notificacao, o servico pode nao conseguir operar corretamente porque o Android exige notificacao visivel para Foreground Service.
+
 ## Limites do Android
 
 - O Android exige notificacao visivel para microfone em segundo plano.
@@ -68,4 +72,3 @@ O app solicita:
 ## Seguranca
 
 O servico continua obedecendo ao `CommandEncoder`. Comandos sem bytes confirmados nao enviam pacotes inventados para o radio.
-

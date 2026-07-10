@@ -1,144 +1,89 @@
-# ToCar — Arquitetura Android
+# ToCar - Arquitetura Android
 
 ## Stack
 
-- Kotlin
-- Jetpack Compose
-- Material Design 3
-- Android 13 API 33+
-- Bluetooth clássico SPP
-- MVVM
-- Coroutines + Flow
+- Kotlin.
+- Jetpack Compose.
+- Material Design 3.
+- Coroutines + Flow.
+- Bluetooth classico SPP.
+- SpeechRecognizer e TextToSpeech.
+- Foreground Service para voz em segundo plano.
+- SharedPreferences para presets locais.
 
-## Estrutura sugerida
+## Estrutura atual
 
 ```text
-app/src/main/java/br/com/tocar/
+app/src/main/java/com/example/tocar/
 
 ├── MainActivity.kt
-├── App.kt
-│
-├── navigation/
-│   └── ToCarNavGraph.kt
 │
 ├── ui/
-│   ├── bluetooth/
-│   │   ├── BluetoothScreen.kt
-│   │   ├── BluetoothViewModel.kt
-│   │   └── BluetoothUiState.kt
-│   │
-│   ├── controls/
-│   │   ├── MainControlsScreen.kt
-│   │   ├── MainControlsViewModel.kt
-│   │   └── MainControlsUiState.kt
-│   │
-│   ├── files/
-│   │   ├── FileBrowserScreen.kt
-│   │   ├── FileBrowserViewModel.kt
-│   │   └── FileBrowserUiState.kt
-│   │
-│   ├── audio/
-│   │   ├── AudioSettingsScreen.kt
-│   │   ├── AudioSettingsViewModel.kt
-│   │   └── AudioSettingsUiState.kt
-│   │
-│   ├── developer/
-│   │   ├── PacketLogScreen.kt
-│   │   ├── PacketLogViewModel.kt
-│   │   └── PacketLogUiState.kt
-│   │
+│   ├── app/
+│   │   └── ToCarApp.kt
 │   └── theme/
 │
 ├── bluetooth/
 │   ├── AndroidBluetoothController.kt
-│   ├── BluetoothDeviceInfo.kt
-│   ├── BluetoothConnectionState.kt
-│   ├── SppClient.kt
-│   ├── SppConnection.kt
-│   └── SppConstants.kt
+│   ├── BluetoothModels.kt
+│   └── SppConnection.kt
 │
 ├── protocol/
 │   ├── RadioCommand.kt
-│   ├── RadioMode.kt
-│   ├── EqPreset.kt
-│   ├── RepeatMode.kt
-│   ├── RadioState.kt
-│   ├── CommandEncoder.kt
-│   ├── ResponseDecoder.kt
-│   ├── UnknownPacket.kt
-│   └── ProtocolMap.kt
+│   ├── RadioModels.kt
+│   ├── ProtocolMap.kt
+│   └── Hex.kt
 │
 ├── repository/
 │   └── RadioRepository.kt
 │
 ├── logging/
-│   ├── PacketLog.kt
-│   ├── PacketLogger.kt
-│   └── HexFormatter.kt
+│   └── PacketLog.kt
+│
+├── preset/
+│   └── AudioPreset.kt
 │
 └── voice/
-    ├── VoiceCommandParser.kt
-    └── VoiceCommand.kt
+    ├── BackgroundVoiceService.kt
+    ├── MusicSearch.kt
+    └── VoiceCommandParser.kt
 ```
-
-## Implementacao atual
-
-A primeira versao do app usa o pacote `com.example.tocar` e separa:
-
-- Frontend Compose em `ui/app`.
-- Bluetooth em `bluetooth`.
-- Protocolo em `protocol`.
-- Repositorio em `repository`.
-- Logs em `logging`.
-- Voz em `voice`.
-
-O APK CarLive 2.284 fornecido indica uso de `com.zddz.bt`, Bluetooth classico e BLE. Por isso o ToCar mantem SPP e tambem registra UUIDs BLE encontrados no APK para uma etapa futura:
-
-```text
-SPP:  00001101-0000-1000-8000-00805F9B34FB
-BLE:  0000FFF0-0000-1000-8000-00805F9B34FB
-BLE:  0000FFF1-0000-1000-8000-00805F9B34FB
-Extra: 258EAFA5-E914-47DA-95CA-C5AB0DC85B11
-```
-
-Regra de seguranca: UUID de conexao nao equivale a bytes de comando. Os comandos continuam bloqueados no `CommandEncoder` ate captura ou decompilacao confirmada.
 
 ## Fluxo principal
 
 ```text
-Compose Screen
-   ↓
-ViewModel
+Compose UI ou BackgroundVoiceService
    ↓
 RadioRepository
    ↓
 CommandEncoder
    ↓
+AndroidBluetoothController
+   ↓
 SppConnection.outputStream
    ↓
-Rádio Roadstar
+Radio Roadstar
 ```
 
 Fluxo de retorno:
 
 ```text
-Rádio Roadstar
+Radio Roadstar
    ↓
 SppConnection.inputStream
    ↓
-ResponseDecoder
+RadioRepository.onRxPacket
    ↓
-RadioRepository
+PacketLogger
    ↓
-StateFlow<RadioState>
-   ↓
-ViewModel
-   ↓
-Compose Screen
+Tela Log
 ```
 
-## Princípio mais importante
-A interface nunca deve conhecer bytes Bluetooth diretamente.
+`ResponseDecoder` ainda nao foi implementado porque os pacotes RX reais do Roadstar ainda nao foram mapeados.
+
+## Regra central
+
+A UI nunca deve conhecer bytes Bluetooth diretamente.
 
 Errado:
 
@@ -149,53 +94,69 @@ button.onClick { socket.outputStream.write(byteArrayOf(0x01, 0x02)) }
 Certo:
 
 ```kotlin
-button.onClick { viewModel.send(RadioCommand.Next) }
+button.onClick { repository.send(RadioCommand.NextTrack) }
 ```
 
-Assim, quando o pacote real for descoberto, somente o `CommandEncoder` muda.
+Assim, quando o pacote real for descoberto, somente `CommandEncoder` e `ProtocolMap` precisam mudar.
 
-## Estados globais
+## Estado global
 
 ```kotlin
 data class RadioState(
     val connected: Boolean = false,
+    val deviceName: String? = null,
     val mode: RadioMode? = null,
-    val volume: Int? = null,
-    val trackName: String? = null,
-    val eqPreset: EqPreset? = null,
+    val volume: Int = 18,
     val bass: Int = 0,
     val treble: Int = 0,
     val balance: Int = 0,
     val fader: Int = 0,
+    val eqPreset: EqPreset = EqPreset.OFF,
     val loudness: Boolean = false,
-    val lastRxPacket: ByteArray? = null,
-    val lastTxPacket: ByteArray? = null
+    val panelColor: PanelColor = PanelColor.AUTO,
+    val lastVoiceText: String? = null,
+    val lastMessage: String = "Pronto para conectar ao Roadstar"
 )
 ```
 
-## Repositório central
+## Voz
 
-```kotlin
-class RadioRepository(
-    private val sppConnection: SppConnection,
-    private val encoder: CommandEncoder,
-    private val decoder: ResponseDecoder,
-    private val logger: PacketLogger
-) {
-    val radioState: StateFlow<RadioState> = TODO()
+Ha dois fluxos:
 
-    suspend fun send(command: RadioCommand) {
-        val packet = encoder.encode(command)
-        logger.tx(command, packet)
-        sppConnection.write(packet)
-    }
+- Voz dentro do app via `RecognizerIntent`.
+- Voz em segundo plano via `BackgroundVoiceService`.
 
-    suspend fun startReading() {
-        sppConnection.readLoop { packet ->
-            logger.rx(packet)
-            val statePatch = decoder.decode(packet)
-            // atualizar StateFlow
-        }
-    }
-}
+Ambos usam:
+
+- `VoiceCommandParser` para comandos diretos.
+- `MusicSearchEngine` para busca de musica por nome.
+- `PresetRepository` para aplicar presets por voz.
+- `RadioRepository` para enviar comandos logicos.
+
+## Presets
+
+`PresetRepository` salva localmente:
+
+- EQ.
+- BAS.
+- TRE.
+- BAL.
+- FAD.
+- LOUD.
+- Cor do painel.
+
+Aplicar um preset gera uma lista de `RadioCommand`.
+
+## CarLive
+
+O APK CarLive 2.284 fornecido indica uso de `com.zddz.bt`, Bluetooth classico e BLE. UUIDs encontrados:
+
+```text
+SPP:  00001101-0000-1000-8000-00805F9B34FB
+BLE:  0000FFF0-0000-1000-8000-00805F9B34FB
+BLE:  0000FFF1-0000-1000-8000-00805F9B34FB
+Extra: 258EAFA5-E914-47DA-95CA-C5AB0DC85B11
 ```
+
+UUID de conexao nao equivale a bytes de comando. Os comandos continuam bloqueados no `CommandEncoder` ate captura ou decompilacao confirmada.
+

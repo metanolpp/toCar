@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import com.example.tocar.bluetooth.AndroidBluetoothController
 import com.example.tocar.bluetooth.BluetoothConnectionState
 import com.example.tocar.bluetooth.BluetoothDeviceInfo
+import com.example.tocar.bluetooth.BluetoothTransport
 import com.example.tocar.logging.PacketLogEntry
 import com.example.tocar.logging.PacketLogger
 import com.example.tocar.preset.AudioPreset
@@ -75,7 +76,7 @@ import com.example.tocar.protocol.RadioCommand
 import com.example.tocar.protocol.RadioMode
 import com.example.tocar.protocol.RadioRanges
 import com.example.tocar.protocol.RadioState
-import com.example.tocar.protocol.hexToByteArraySafe
+import com.example.tocar.protocol.parseHexPacket
 import com.example.tocar.repository.RadioRepository
 import com.example.tocar.voice.MusicEntry
 import com.example.tocar.voice.MusicSearchEngine
@@ -200,7 +201,7 @@ fun ToCarApp() {
     val connectionState by bluetoothController.connectionState.collectAsState()
     val logs by logger.entries.collectAsState()
     val presets by presetRepository.presets.collectAsState()
-    var selectedTab by remember { mutableStateOf(ToCarTab.Controls) }
+    var selectedTab by remember { mutableStateOf(ToCarTab.Connect) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -360,9 +361,9 @@ private fun BluetoothScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            SectionTitle("Bluetooth SPP")
+            SectionTitle("Conexao")
             Text(
-                "Conecte em dispositivos pareados com nome CAR-BT, RS-2751BR ou CAR KIT-APP. O envio de comandos fica bloqueado ate o protocolo real ser mapeado.",
+                "Use o dispositivo BLE do aplicativo do radio quando aparecer como RS-2751BR PLUS-APP. O perfil classico continua disponivel para audio.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(12.dp))
@@ -389,10 +390,22 @@ private fun BluetoothScreen(
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(device.name, fontWeight = FontWeight.SemiBold)
-                        Text(device.address, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (device.isLikelyRoadstar) Text("Compativel com os nomes do manual", color = MaterialTheme.colorScheme.primary)
+                        Text("${device.address} | ${device.transport.label}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (device.transport == com.example.tocar.bluetooth.BluetoothTransport.Ble) {
+                            Text("Controle por aplicativo", color = MaterialTheme.colorScheme.primary)
+                        } else if (device.isLikelyRoadstar) {
+                            Text("Perfil de audio/classico", color = MaterialTheme.colorScheme.primary)
+                        }
                     }
-                    Button(onClick = { onConnect(device) }) { Text("Conectar") }
+                    Button(onClick = { onConnect(device) }) {
+                        Text(
+                            when {
+                                device.transport == BluetoothTransport.Ble -> "Conectar"
+                                device.isLikelyRoadstar -> "Buscar BLE"
+                                else -> "Conectar"
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -417,7 +430,27 @@ private fun ControlsScreen(
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        SectionTitle("Controle principal")
+        SectionTitle("Controle")
+        ControlPanel {
+            Text("Comandos mapeados", fontWeight = FontWeight.SemiBold)
+            Text(
+                "Mode, proxima e anterior usam bytes BLE capturados do CarLive. Os demais ficam no log ate confirmacao.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = { onCommand(RadioCommand.ModeNext) }, modifier = Modifier.weight(1f)) {
+                    Text("Mode")
+                }
+                Button(onClick = { onCommand(RadioCommand.PreviousTrack) }, modifier = Modifier.weight(1f)) {
+                    Text("Anterior")
+                }
+                Button(onClick = { onCommand(RadioCommand.NextTrack) }, modifier = Modifier.weight(1f)) {
+                    Text("Proxima")
+                }
+            }
+        }
+
         ControlPanel {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 ActionButton("Power") { onCommand(RadioCommand.PowerToggle) }
@@ -452,8 +485,8 @@ private fun ControlsScreen(
             Slider(
                 value = radioState.volume.toFloat(),
                 onValueChange = { onCommand(RadioCommand.SetVolume(it.toInt())) },
-                valueRange = 0f..40f,
-                steps = 39
+                valueRange = 0f..5f,
+                steps = 4
             )
         }
 
@@ -769,7 +802,7 @@ private fun LogScreen(
             Spacer(Modifier.height(10.dp))
             Button(
                 onClick = {
-                    rawHex.hexToByteArraySafe()
+                    parseHexPacket(rawHex)
                         .onSuccess { onCommand(RadioCommand.Raw(it)) }
                         .onFailure { rawError = it.message }
                 },
@@ -865,13 +898,19 @@ private fun EmptyState(text: String) {
 
 private fun connectionLabel(state: BluetoothConnectionState): String = when (state) {
     BluetoothConnectionState.Unsupported -> "Bluetooth indisponivel neste aparelho"
-    BluetoothConnectionState.PermissionRequired -> "Permissoes Bluetooth e microfone pendentes"
+    BluetoothConnectionState.PermissionRequired -> "Permissoes Bluetooth/Localizacao pendentes"
     BluetoothConnectionState.Disconnected -> "Desconectado"
     BluetoothConnectionState.Scanning -> "Buscando dispositivos"
     is BluetoothConnectionState.Connecting -> "Conectando em ${state.device.name}"
     is BluetoothConnectionState.Connected -> "Conectado em ${state.device.name}"
     is BluetoothConnectionState.Error -> "Erro: ${state.message}"
 }
+
+private val BluetoothTransport.label: String
+    get() = when (this) {
+        BluetoothTransport.Ble -> "BLE"
+        BluetoothTransport.Classic -> "Audio"
+    }
 
 private fun Int.formatSigned(): String = String.format(Locale.US, "%+03d", this)
 
