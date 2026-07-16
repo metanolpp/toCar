@@ -1,23 +1,23 @@
 package com.example.tocar.protocol
 
 data class ProtocolMap(
-    val powerToggle: ByteArray = byteArrayOf(),
-    val muteToggle: ByteArray = byteArrayOf(),
-    val modeNext: ByteArray = byteArrayOf(0x01, 0x01),
+    val powerToggle: ByteArray = byteArrayOf(0x01, 0x01),
+    val muteToggle: ByteArray = byteArrayOf(0x09, 0x01),
+    val modeNext: ByteArray = byteArrayOf(0x08, 0x01),
     val playPause: ByteArray = byteArrayOf(),
     val nextTrack: ByteArray = byteArrayOf(0x03, 0x02, 0x00),
     val previousTrack: ByteArray = byteArrayOf(0x03, 0x01, 0x00),
     val introToggle: ByteArray = byteArrayOf(),
     val repeatToggle: ByteArray = byteArrayOf(),
     val randomToggle: ByteArray = byteArrayOf(),
-    val skipMinus10: ByteArray = byteArrayOf(),
-    val skipPlus10: ByteArray = byteArrayOf(),
-    val directoryPrevious: ByteArray = byteArrayOf(),
-    val directoryNext: ByteArray = byteArrayOf(),
-    val volumeUp: ByteArray = byteArrayOf(),
-    val volumeDown: ByteArray = byteArrayOf(),
-    val band: ByteArray = byteArrayOf(),
-    val ams: ByteArray = byteArrayOf(),
+    val skipMinus10: ByteArray = byteArrayOf(0x03, 0x03),
+    val skipPlus10: ByteArray = byteArrayOf(0x03, 0x04),
+    val directoryPrevious: ByteArray = byteArrayOf(0x03, 0x09),
+    val directoryNext: ByteArray = byteArrayOf(0x03, 0x08),
+    val volumeUp: ByteArray = byteArrayOf(0x04, 0x02),
+    val volumeDown: ByteArray = byteArrayOf(0x04, 0x01),
+    val band: ByteArray = byteArrayOf(0x07, 0x01),
+    val ams: ByteArray = byteArrayOf(0x07, 0x02),
     val clock: ByteArray = byteArrayOf(),
     val callAnswerOrRedial: ByteArray = byteArrayOf(),
     val callEnd: ByteArray = byteArrayOf()
@@ -56,7 +56,15 @@ class CommandEncoder(
             RadioCommand.CallAnswerOrRedial -> protocolMap.callAnswerOrRedial
             RadioCommand.CallEnd -> protocolMap.callEnd
             is RadioCommand.Raw -> command.bytes.takeIf { it.isNotEmpty() && it.size <= MAX_RAW_PACKET_SIZE }
-            is RadioCommand.SetMode,
+            is RadioCommand.SetMode -> when (command.mode) {
+                RadioMode.RADIO -> byteArrayOf(0x08, 0x04)
+                RadioMode.USB -> byteArrayOf(0x08, 0x02)
+                RadioMode.SD -> byteArrayOf(0x08, 0x03)
+                RadioMode.AUX_IN -> byteArrayOf(0x08, 0x06)
+                RadioMode.BT -> byteArrayOf(0x08, 0x05)
+                RadioMode.COLOR -> null
+            }
+            
             is RadioCommand.SetVolume,
             is RadioCommand.SetEq,
             is RadioCommand.SetBass,

@@ -1,0 +1,50 @@
+package com.zddz.app.carlive.fragment;
+
+/* loaded from: /storage/emulated/0/Android/data/com.apktools.app.decompile/files/decompile_temp/jadx/classes2.dex */
+public class CarModel {
+    public static final int DSP_IFX_3D_ROTARY = 5;
+    public static final int DSP_IFX_FULL_SHORT = 1;
+    public static final int DSP_IFX_MEGA_BASS = 2;
+    public static final int DSP_IFX_OFF = 0;
+    public static final int DSP_IFX_VIRTUAL = 4;
+    public static final int DSP_IFX_VOCAL = 3;
+    public static final int EQ_STYLE_CLASSIC = 4;
+    public static final int EQ_STYLE_COUNTRY_OR_NEWS = 5;
+    public static final int EQ_STYLE_JAZZ = 3;
+    public static final int EQ_STYLE_NORMAL = 0;
+    public static final int EQ_STYLE_POPULAR = 1;
+    public static final int EQ_STYLE_ROCK = 2;
+    public static final int EQ_STYLE_USER = 6;
+    public static final int EQ_TYPE_AOVEISE = 2;
+    public static final int EQ_TYPE_CHANNEL = 3;
+    public static final int EQ_TYPE_CHANNEL_FIVE = 5;
+    public static final int EQ_TYPE_CHANNEL_LOCATION = 4;
+    public static final int EQ_TYPE_CHANNEL_SIX = 6;
+    public static final int EQ_TYPE_DSP = 1;
+    public static final int EQ_TYPE_EQ = 0;
+    public static final int EQ_TYPE_SIX_STATION = 8;
+    public static final int EQ_TYPE_TEN_EQ = 7;
+    public static final int LIGHT_BT_LIGHT = 5;
+    public static final int LIGHT_GB = 3;
+    public static final int LIGHT_NORMAL = 0;
+    public static final int LIGHT_RB = 4;
+    public static final int LIGHT_RG = 2;
+    public static final int LIGHT_RGB = 1;
+    public static final int MODE_AM = 12;
+    public static final int MODE_AUX = 6;
+    public static final int MODE_BT = 5;
+    public static final int MODE_DAB = 7;
+    public static final int MODE_DISC = 8;
+    public static final int MODE_FLASH = 10;
+    public static final int MODE_FM = 4;
+    public static final int MODE_FREE = 11;
+    public static final int MODE_NORMAL = 1;
+    public static final int MODE_POWER_OFF = 0;
+    public static final int MODE_SD = 3;
+    public static final int MODE_SPDIF = 9;
+    public static final int MODE_USB = 2;
+    public static final int MUSIC_PLAY_MODE_BROWSE = 1;
+    public static final int MUSIC_PLAY_MODE_LOOP = 0;
+    public static final int MUSIC_PLAY_MODE_RANDOM = 3;
+    public static final int MUSIC_PLAY_MODE_SINGLE = 2;
+}

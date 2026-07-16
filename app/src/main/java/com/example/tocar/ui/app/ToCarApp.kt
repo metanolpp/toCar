@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedButton
@@ -87,9 +88,9 @@ import java.util.Locale
 
 private enum class ToCarTab(val label: String) {
     Connect("Conexao"),
-    Controls("Controle"),
-    Files("USB/SD"),
-    Audio("Audio"),
+    Controls("Player"),
+    Files("Playlist"),
+    Audio("Equalizador"),
     Log("Log")
 }
 
@@ -241,13 +242,16 @@ fun ToCarApp() {
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                tonalElevation = 0.dp
+            ) {
                 ToCarTab.entries.forEach { tab ->
                     NavigationBarItem(
                         selected = selectedTab == tab,
                         onClick = { selectedTab = tab },
-                        icon = { Text(tab.label.take(1), fontWeight = FontWeight.Bold) },
-                        label = { Text(tab.label) }
+                        icon = { Text(tab.label.take(1), fontWeight = FontWeight.Black) },
+                        label = { Text(tab.label.uppercase(Locale.getDefault())) }
                     )
                 }
             }
@@ -320,28 +324,71 @@ private fun StatusHeader(
     radioState: RadioState,
     connectionState: BluetoothConnectionState
 ) {
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 1.dp) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 0.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 14.dp),
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(12.dp)
+                    .size(9.dp)
                     .clip(CircleShape)
                     .background(if (radioState.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
             )
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text("ToCar Roadstar RS-2751BR Plus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(connectionLabel(connectionState), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("TOCAR // ROADSTAR PLAYER", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+                Text(connectionLabel(connectionState).uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             AssistChip(
                 onClick = {},
-                label = { Text(radioState.mode?.label ?: "Sem modo") }
+                label = { Text((radioState.mode?.label ?: "OFFLINE").uppercase(Locale.getDefault()), fontWeight = FontWeight.Bold) }
             )
+        }
+    }
+}
+
+@Composable
+private fun PlayerDisplay(radioState: RadioState) {
+    val sourceTitle = when (radioState.mode) {
+        RadioMode.RADIO -> {
+            val frequency = radioState.fmFrequencyMhz?.let { String.format(Locale.US, "%.1f FM", it) } ?: "--.- FM"
+            val station = radioState.stationName?.takeIf { it.isNotBlank() } ?: "SEM RDS"
+            "$frequency // $station"
+        }
+        RadioMode.USB -> "USB // PLAYLIST LOCAL"
+        RadioMode.SD -> "SD // PLAYLIST LOCAL"
+        RadioMode.BT -> "BLUETOOTH AUDIO"
+        RadioMode.AUX_IN -> "AUX INPUT"
+        RadioMode.COLOR -> "PAINEL RGB"
+        null -> "NO SIGNAL // CONECTE O RÁDIO"
+    }
+
+    ControlPanel {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("TOCAR CLASSIC PLAYER", color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Black)
+                Spacer(Modifier.height(6.dp))
+                Text(sourceTitle, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                Text("${radioState.eqPreset.label.uppercase(Locale.getDefault())} EQ  //  VOL ${radioState.volume.toString().padStart(2, '0')}  //  ${if (radioState.loudness) "LOUD" else "NORMAL"}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(if (radioState.connected) "● ONLINE" else "○ OFFLINE", color = if (radioState.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                Text(radioState.mode?.label?.uppercase(Locale.getDefault()) ?: "---", color = MaterialTheme.colorScheme.tertiary)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
+            val levels = listOf(3, 6, 9, 5, 11, 8, 4, 7, 10, 6, 3, 8)
+            levels.forEach { level ->
+                Box(Modifier.weight(1f).height((level * 3).dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)))
+            }
         }
     }
 }
@@ -423,6 +470,8 @@ private fun ControlsScreen(
     radioState: RadioState,
     onCommand: (RadioCommand) -> Unit
 ) {
+    var powerSelected by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -430,11 +479,12 @@ private fun ControlsScreen(
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        SectionTitle("Controle")
+        SectionTitle("Painel de controle")
+        PlayerDisplay(radioState)
         ControlPanel {
             Text("Comandos mapeados", fontWeight = FontWeight.SemiBold)
             Text(
-                "Mode, proxima e anterior usam bytes BLE capturados do CarLive. Os demais ficam no log ate confirmacao.",
+                "Controles básicos preservados do catálogo legado CarLive.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(12.dp))
@@ -453,7 +503,10 @@ private fun ControlsScreen(
 
         ControlPanel {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                ActionButton("Power") { onCommand(RadioCommand.PowerToggle) }
+                ActionButton("Power", selected = powerSelected) {
+                    powerSelected = !powerSelected
+                    onCommand(RadioCommand.PowerToggle)
+                }
                 ActionButton("Mode") { onCommand(RadioCommand.ModeNext) }
                 ActionButton("Mute") { onCommand(RadioCommand.MuteToggle) }
                 ActionButton("AMS") { onCommand(RadioCommand.Ams) }
@@ -535,6 +588,10 @@ private fun FilesAndVoiceScreen(
     onTypedVoice: (String) -> Unit
 ) {
     var typedCommand by remember { mutableStateOf("quero this is ritmym of the night") }
+    var playlist by remember(catalogPreview) { mutableStateOf(catalogPreview) }
+    var newTitle by remember { mutableStateOf("") }
+    var newFolder by remember { mutableStateOf("1") }
+    var newTrack by remember { mutableStateOf("1") }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -542,7 +599,47 @@ private fun FilesAndVoiceScreen(
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        SectionTitle("USB/SD e voz")
+        SectionTitle("Painel de playlist")
+        ControlPanel {
+            Text("WINAMP PLAYLIST // ${radioState.mode?.label?.uppercase(Locale.getDefault()) ?: "SEM FONTE"}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
+            Spacer(Modifier.height(10.dp))
+            if (playlist.isEmpty()) {
+                Text("PLAYLIST VAZIA", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            playlist.forEachIndexed { index, entry ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${index + 1}.", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.width(30.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(entry.spokenLabel, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        Text("PASTA ${entry.folder} // FAIXA ${entry.track}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    OutlinedButton(onClick = { onCommand(RadioCommand.SelectFolderTrack(entry.folder, entry.track)) }) { Text("▶") }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(newTitle, { newTitle = it }, Modifier.fillMaxWidth(), label = { Text("Música ou nome da pasta") }, singleLine = true)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(newFolder, { newFolder = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("Pasta") }, singleLine = true)
+                OutlinedTextField(newTrack, { newTrack = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("Faixa") }, singleLine = true)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    val folder = newFolder.toIntOrNull() ?: return@Button
+                    val track = newTrack.toIntOrNull() ?: return@Button
+                    if (newTitle.isNotBlank()) {
+                        playlist = playlist + MusicEntry(newTitle.trim(), folder = folder, track = track)
+                        newTitle = ""
+                    }
+                }) { Text("ADD MÚSICA") }
+                OutlinedButton(onClick = {
+                    val folder = newFolder.toIntOrNull() ?: return@OutlinedButton
+                    val title = newTitle.ifBlank { "Pasta $folder" }
+                    playlist = playlist + MusicEntry("[DIR] $title", folder = folder, track = 1)
+                    newTitle = ""
+                }) { Text("ADD PASTA") }
+            }
+            Text("Catálogo local. A leitura automática do USB depende de resposta compatível do rádio.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         ControlPanel {
             Text("Navegacao segura", fontWeight = FontWeight.SemiBold)
             Text(
@@ -641,7 +738,7 @@ private fun AudioScreen(
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        SectionTitle("Audio")
+        SectionTitle("Painel de equalizador")
         ControlPanel {
             Text("Equalizador", fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
@@ -861,10 +958,10 @@ private fun SettingSlider(
 private fun ControlPanel(content: @Composable () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 1.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        shape = RoundedCornerShape(2.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 0.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     ) {
         Column(Modifier.padding(14.dp)) {
             content()
@@ -873,15 +970,27 @@ private fun ControlPanel(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun ActionButton(label: String, onClick: () -> Unit) {
-    OutlinedButton(onClick = onClick) {
-        Text(label, textAlign = TextAlign.Center)
+private fun ActionButton(label: String, selected: Boolean = false, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        colors = if (selected) {
+            ButtonDefaults.outlinedButtonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            )
+        } else {
+            ButtonDefaults.outlinedButtonColors()
+        },
+        shape = RoundedCornerShape(2.dp),
+        border = BorderStroke(width = 1.dp, color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
+    ) {
+        Text(label.uppercase(Locale.getDefault()), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 private fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+    Text("[ ${text.uppercase(Locale.getDefault())} ]", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
 }
 
 @Composable

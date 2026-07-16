@@ -12,10 +12,10 @@
 - `08-seguranca-e-privacidade.md` - seguranca, privacidade e limites.
 - `09-busca-musica-por-voz.md` - busca por nome de musica e escolha por voz.
 - `10-voz-segundo-plano.md` - escuta em segundo plano via Foreground Service.
+- `11-estrutura-carlive-comandos-detectados.md` - inventário verificado por ADB/HCI, transporte BLE, comandos confirmados, modos e mensagens pendentes.
 
 ## Estado atual
 
 O app ja possui interface Compose, camada Bluetooth SPP, protocolo logico, log Raw, comandos de voz, busca de musica por voz, presets de audio/cor e um servico experimental de voz em segundo plano.
 
 Os bytes reais do Roadstar ainda nao estao mapeados. Comandos sem pacote confirmado sao bloqueados pelo `CommandEncoder`.
-

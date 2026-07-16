@@ -44,6 +44,8 @@ data class RadioState(
     val connected: Boolean = false,
     val deviceName: String? = null,
     val mode: RadioMode? = null,
+    val fmFrequencyMhz: Double? = null,
+    val stationName: String? = null,
     val volume: Int = 18,
     val bass: Int = 0,
     val treble: Int = 0,
