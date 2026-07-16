@@ -13,6 +13,7 @@
 - `09-busca-musica-por-voz.md` - busca por nome de musica e escolha por voz.
 - `10-voz-segundo-plano.md` - escuta em segundo plano via Foreground Service.
 - `11-estrutura-carlive-comandos-detectados.md` - inventário verificado por ADB/HCI, transporte BLE, comandos confirmados, modos e mensagens pendentes.
+- `12-emulador-bridge-windows.md` - execução no Android Emulator e acesso ao Bluetooth do notebook por meio do bridge Windows.
 
 ## Estado atual
 

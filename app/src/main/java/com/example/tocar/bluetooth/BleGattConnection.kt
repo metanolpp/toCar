@@ -9,6 +9,7 @@ import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,13 +36,18 @@ class BleGattConnection(
 
     private val callback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            Log.i(TAG, "connection address=${device.address} status=$status state=$newState")
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 ready.completeExceptionally(IllegalStateException("BLE status $status"))
                 return
             }
 
             when (newState) {
-                BluetoothProfile.STATE_CONNECTED -> gatt.discoverServices()
+                BluetoothProfile.STATE_CONNECTED -> {
+                    val started = gatt.discoverServices()
+                    Log.i(TAG, "discoverServices address=${device.address} started=$started")
+                    if (!started) ready.completeExceptionally(IllegalStateException("Falha iniciando descoberta GATT"))
+                }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     if (!ready.isCompleted) {
                         ready.completeExceptionally(IllegalStateException("BLE desconectado"))
@@ -51,6 +57,7 @@ class BleGattConnection(
         }
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            Log.i(TAG, "services address=${device.address} status=$status count=${gatt.services.size}")
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 ready.completeExceptionally(IllegalStateException("Falha descobrindo servicos BLE: $status"))
                 return
@@ -66,18 +73,35 @@ class BleGattConnection(
             }
 
             txCharacteristic = characteristic
-            gatt.setCharacteristicNotification(characteristic, true)
-            characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG_UUID)?.let { descriptor ->
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-                } else {
-                    @Suppress("DEPRECATION")
-                    descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                    @Suppress("DEPRECATION")
-                    gatt.writeDescriptor(descriptor)
-                }
+            if (!gatt.setCharacteristicNotification(characteristic, true)) {
+                ready.completeExceptionally(IllegalStateException("Falha habilitando notificacao FFF1"))
+                return
             }
-            ready.complete(Unit)
+            val descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG_UUID)
+            if (descriptor == null) {
+                // This Roadstar firmware exposes FFF1 without a CCCD. CarLive only
+                // registers the local notification callback and continues writing.
+                Log.i(TAG, "descriptor2902 absent address=${device.address}; continuing like CarLive")
+                ready.complete(Unit)
+                return
+            }
+            val accepted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) == BluetoothGatt.GATT_SUCCESS
+            } else {
+                @Suppress("DEPRECATION")
+                descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                @Suppress("DEPRECATION")
+                gatt.writeDescriptor(descriptor)
+            }
+            Log.i(TAG, "enableNotifications address=${device.address} accepted=$accepted")
+            if (!accepted) ready.completeExceptionally(IllegalStateException("Falha escrevendo descriptor 2902"))
+        }
+
+        override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
+            Log.i(TAG, "descriptorWrite address=${device.address} uuid=${descriptor.uuid} status=$status")
+            if (descriptor.uuid != CLIENT_CHARACTERISTIC_CONFIG_UUID) return
+            if (status == BluetoothGatt.GATT_SUCCESS) ready.complete(Unit)
+            else ready.completeExceptionally(IllegalStateException("Falha confirmando notificacoes: $status"))
         }
 
         @Deprecated("Deprecated in Java")
@@ -106,6 +130,9 @@ class BleGattConnection(
         }
         gatt = device.connectGatt(context, autoConnect, callback, selectedTransport)
         withTimeout(CONNECT_TIMEOUT_MS) { ready.await() }
+        kotlinx.coroutines.delay(SYNCHRONIZE_DELAY_MS)
+        write(SYNCHRONIZE_PACKET)
+        Log.i(TAG, "synchronize address=${device.address} packet=0103")
     }
 
     suspend fun write(packet: ByteArray) = withContext(Dispatchers.IO) {
@@ -143,6 +170,9 @@ class BleGattConnection(
     }
 
     private companion object {
+        const val TAG = "ToCarBLE"
         const val CONNECT_TIMEOUT_MS = 18_000L
+        const val SYNCHRONIZE_DELAY_MS = 1_500L
+        val SYNCHRONIZE_PACKET = byteArrayOf(0x01, 0x03)
     }
 }

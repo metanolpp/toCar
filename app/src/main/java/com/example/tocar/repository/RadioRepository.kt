@@ -1,6 +1,6 @@
 package com.example.tocar.repository
 
-import com.example.tocar.bluetooth.AndroidBluetoothController
+import com.example.tocar.bluetooth.RadioController
 import com.example.tocar.logging.PacketLogger
 import com.example.tocar.protocol.CommandEncoder
 import com.example.tocar.protocol.EqPreset
@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class RadioRepository(
-    private val bluetoothController: AndroidBluetoothController,
+    private val bluetoothController: RadioController,
     private val encoder: CommandEncoder,
     private val logger: PacketLogger,
     private val scope: CoroutineScope
@@ -35,7 +35,30 @@ class RadioRepository(
 
     fun onRxPacket(bytes: ByteArray) {
         logger.rx(bytes)
-        _radioState.update { it.copy(lastMessage = "RX ${bytes.size} bytes") }
+        _radioState.update { state ->
+            when {
+                bytes.size >= 2 && bytes[0] == 0x08.toByte() -> state.copy(
+                    mode = when (bytes[1].toInt() and 0xFF) {
+                        0x02 -> RadioMode.USB
+                        0x03 -> RadioMode.SD
+                        0x04 -> RadioMode.RADIO
+                        0x05 -> RadioMode.BT
+                        0x06 -> RadioMode.AUX_IN
+                        else -> state.mode
+                    },
+                    lastMessage = "Fonte atualizada pelo rádio"
+                )
+                bytes.size >= 4 && bytes[0] == 0x0D.toByte() && bytes[1] == 0x01.toByte() -> {
+                    val rawFrequency = ((bytes[2].toInt() and 0xFF) shl 8) or (bytes[3].toInt() and 0xFF)
+                    state.copy(
+                        fmFrequencyMhz = rawFrequency / 100.0,
+                        stationName = state.stationName ?: "FM DEMO",
+                        lastMessage = "Frequência FM atualizada"
+                    )
+                }
+                else -> state.copy(lastMessage = "RX ${bytes.size} bytes")
+            }
+        }
     }
 
     fun send(command: RadioCommand) {

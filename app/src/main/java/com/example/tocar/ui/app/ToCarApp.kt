@@ -66,6 +66,9 @@ import com.example.tocar.bluetooth.AndroidBluetoothController
 import com.example.tocar.bluetooth.BluetoothConnectionState
 import com.example.tocar.bluetooth.BluetoothDeviceInfo
 import com.example.tocar.bluetooth.BluetoothTransport
+import com.example.tocar.bluetooth.ControllerBackend
+import com.example.tocar.bluetooth.DemoRadioController
+import com.example.tocar.bluetooth.DesktopBridgeController
 import com.example.tocar.logging.PacketLogEntry
 import com.example.tocar.logging.PacketLogger
 import com.example.tocar.preset.AudioPreset
@@ -100,8 +103,16 @@ fun ToCarApp() {
     val scope = rememberCoroutineScope()
     val logger = remember { PacketLogger() }
     val presetRepository = remember { PresetRepository(context) }
-    val bluetoothController = remember { AndroidBluetoothController(context, scope) }
-    val repository = remember {
+    var controllerBackend by remember { mutableStateOf(ControllerBackend.AndroidBle) }
+    val androidController = remember { AndroidBluetoothController(context, scope) }
+    val demoController = remember { DemoRadioController(scope) }
+    val desktopBridgeController = remember { DesktopBridgeController(context, scope) }
+    val bluetoothController = when (controllerBackend) {
+        ControllerBackend.AndroidBle -> androidController
+        ControllerBackend.DesktopBridge -> desktopBridgeController
+        ControllerBackend.Demo -> demoController
+    }
+    val repository = remember(bluetoothController) {
         RadioRepository(
             bluetoothController = bluetoothController,
             encoder = CommandEncoder(),
@@ -113,6 +124,10 @@ fun ToCarApp() {
     val musicSearchEngine = remember { MusicSearchEngine() }
     var pendingMusicChoices by remember { mutableStateOf<List<MusicEntry>>(emptyList()) }
     var textToSpeech by remember { mutableStateOf<TextToSpeech?>(null) }
+
+    DisposableEffect(bluetoothController) {
+        onDispose { bluetoothController.disconnect() }
+    }
 
     DisposableEffect(context) {
         val tts = TextToSpeech(context) { status ->
@@ -203,7 +218,6 @@ fun ToCarApp() {
     val logs by logger.entries.collectAsState()
     val presets by presetRepository.presets.collectAsState()
     var selectedTab by remember { mutableStateOf(ToCarTab.Connect) }
-
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
@@ -222,7 +236,7 @@ fun ToCarApp() {
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(bluetoothController) {
         if (bluetoothController.hasRequiredPermissions()) {
             bluetoothController.refreshBondedDevices()
         }
@@ -402,63 +416,90 @@ private fun BluetoothScreen(
     onConnect: (BluetoothDeviceInfo) -> Unit,
     onDisconnect: () -> Unit
 ) {
+    val busy = connectionState is BluetoothConnectionState.Connecting ||
+        connectionState is BluetoothConnectionState.Scanning
+    val connected = connectionState is BluetoothConnectionState.Connected
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            SectionTitle("Conexao")
-            Text(
-                "Use o dispositivo BLE do aplicativo do radio quando aparecer como RS-2751BR PLUS-APP. O perfil classico continua disponivel para audio.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            SectionTitle("Conectar ao radio")
+            ControlPanel {
+                Text("1. AUDIO BLUETOOTH", color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Black)
+                Text(
+                    "Conecte primeiro o radio nas configuracoes Bluetooth do Android.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("2. CONTROLE DO APLICATIVO", color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Black)
+                Text(
+                    when (connectionState) {
+                        is BluetoothConnectionState.Connected -> "Controle BLE conectado e pronto"
+                        is BluetoothConnectionState.Connecting -> "Localizando RS-2751BR PLUS-APP e conectando..."
+                        is BluetoothConnectionState.Error -> "Falha: ${connectionState.message}"
+                        else -> "Escolha o radio na lista abaixo e toque em Conectar"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = onRequestPermissions) { Text("Permissoes") }
-                OutlinedButton(onClick = onRefresh) { Text("Atualizar") }
-                if (connectionState is BluetoothConnectionState.Connected) {
-                    OutlinedButton(onClick = onDisconnect) { Text("Desconectar") }
+            if (connected) {
+                Button(onClick = onDisconnect, modifier = Modifier.fillMaxWidth()) {
+                    Text("Desconectar controle")
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = onRequestPermissions, enabled = !busy && !connected, modifier = Modifier.weight(1f)) {
+                    Text("Permissoes")
+                }
+                OutlinedButton(onClick = onRefresh, enabled = !busy && !connected, modifier = Modifier.weight(1f)) {
+                    Text("Atualizar lista")
                 }
             }
         }
         items(devices) { device ->
+            val connectingThis = (connectionState as? BluetoothConnectionState.Connecting)?.device == device
+            val connectedThis = (connectionState as? BluetoothConnectionState.Connected)?.device == device
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = if (device.isLikelyRoadstar) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
+                    containerColor = if (device.isLikelyRoadstar) MaterialTheme.colorScheme.primaryContainer
+                    else MaterialTheme.colorScheme.surfaceContainer
                 ),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(device.name, fontWeight = FontWeight.SemiBold)
-                        Text("${device.address} | ${device.transport.label}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (device.transport == com.example.tocar.bluetooth.BluetoothTransport.Ble) {
-                            Text("Controle por aplicativo", color = MaterialTheme.colorScheme.primary)
-                        } else if (device.isLikelyRoadstar) {
-                            Text("Perfil de audio/classico", color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                    Button(onClick = { onConnect(device) }) {
+                        Text(device.address, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(
                             when {
-                                device.transport == BluetoothTransport.Ble -> "Conectar"
-                                device.isLikelyRoadstar -> "Buscar BLE"
-                                else -> "Conectar"
-                            }
+                                connectedThis -> "Controle conectado"
+                                connectingThis -> "Tentando conectar..."
+                                device.isLikelyRoadstar -> "Radio detectado"
+                                else -> "Dispositivo Bluetooth pareado"
+                            },
+                            color = if (connectedThis) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                    Button(
+                        onClick = { onConnect(device) },
+                        enabled = !busy && !connected
+                    ) {
+                        Text(if (connectingThis) "Conectando..." else if (connectedThis) "Conectado" else "Conectar")
                     }
                 }
             }
         }
         if (devices.isEmpty()) {
             item {
-                EmptyState("Nenhum pareado listado. Pareie o radio nas configuracoes Android e toque em Atualizar.")
+                EmptyState("Nenhum dispositivo pareado. Conecte o radio no Bluetooth do Android e toque em Atualizar lista.")
             }
         }
     }

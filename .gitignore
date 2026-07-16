@@ -15,3 +15,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+desktop-bridge/bin/
+desktop-bridge/obj/
+desktop-bridge/*.log
+docs_legado/tocar-bt-diagnostico.zip
