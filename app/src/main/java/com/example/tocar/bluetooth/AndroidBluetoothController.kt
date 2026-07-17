@@ -44,6 +44,8 @@ class AndroidBluetoothController(
     private val _connectionState =
         MutableStateFlow<BluetoothConnectionState>(BluetoothConnectionState.Disconnected)
     override val connectionState: StateFlow<BluetoothConnectionState> = _connectionState.asStateFlow()
+    private val _signalStrength = MutableStateFlow<Int?>(null)
+    override val signalStrength: StateFlow<Int?> = _signalStrength.asStateFlow()
 
     private var connection: SppConnection? = null
     private var bleConnection: BleGattConnection? = null
@@ -170,6 +172,7 @@ class AndroidBluetoothController(
     }
 
     override fun disconnect() {
+        _signalStrength.value = null
         stopBleScan()
         connectJob?.cancel()
         connectJob = null
@@ -297,6 +300,7 @@ class AndroidBluetoothController(
                 device = device,
                 scope = scope,
                 onPacket = onPacket,
+                onRssi = { _signalStrength.value = it },
                 autoConnect = false,
                 transport = BluetoothDevice.TRANSPORT_LE
             )

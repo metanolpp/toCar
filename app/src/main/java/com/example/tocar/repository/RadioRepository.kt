@@ -30,24 +30,47 @@ class RadioRepository(
     }
 
     fun onDisconnected() {
-        _radioState.update { it.copy(connected = false, deviceName = null, lastMessage = "Desconectado") }
+        _radioState.update { it.copy(connected = false, powerOn = null, deviceName = null, lastMessage = "Desconectado") }
     }
 
     fun onRxPacket(bytes: ByteArray) {
         logger.rx(bytes)
         _radioState.update { state ->
             when {
-                bytes.size >= 2 && bytes[0] == 0x08.toByte() -> state.copy(
-                    mode = when (bytes[1].toInt() and 0xFF) {
-                        0x02 -> RadioMode.USB
-                        0x03 -> RadioMode.SD
-                        0x04 -> RadioMode.RADIO
-                        0x05 -> RadioMode.BT
-                        0x06 -> RadioMode.AUX_IN
-                        else -> state.mode
-                    },
-                    lastMessage = "Fonte atualizada pelo rádio"
-                )
+                bytes.size >= 4 && bytes[0] == 0x04.toByte() && bytes[1] == 0x03.toByte() -> {
+                    val reportedVolume = bytes[2].toInt() and 0xFF
+                    val reportedMaximum = bytes[3].toInt() and 0xFF
+                    val deviceMaximum = reportedMaximum.takeIf { it > 0 } ?: state.maxVolume
+                    state.copy(
+                        volume = reportedVolume.coerceIn(0, deviceMaximum),
+                        maxVolume = deviceMaximum,
+                        lastMessage = "Volume $reportedVolume / $deviceMaximum informado pelo radio"
+                    )
+                }
+                bytes.size >= 2 && bytes[0] == 0x08.toByte() -> {
+                    val reportedMode = bytes[1].toInt() and 0xFF
+                    state.copy(
+                        powerOn = when (reportedMode) {
+                            0x00 -> false
+                            in 0x01..0x06 -> true
+                            else -> state.powerOn
+                        },
+                        mode = when (reportedMode) {
+                            0x00 -> null
+                            0x02 -> RadioMode.USB
+                            0x03 -> RadioMode.SD
+                            0x04 -> RadioMode.RADIO
+                            0x05 -> RadioMode.BT
+                            0x06 -> RadioMode.AUX_IN
+                            else -> state.mode
+                        },
+                        lastMessage = when (reportedMode) {
+                            0x00 -> "Rádio confirmou POWER OFF"
+                            in 0x01..0x06 -> "Rádio confirmou POWER ON"
+                            else -> "Estado recebido do rádio"
+                        }
+                    )
+                }
                 bytes.size >= 4 && bytes[0] == 0x0D.toByte() && bytes[1] == 0x01.toByte() -> {
                     val rawFrequency = ((bytes[2].toInt() and 0xFF) shl 8) or (bytes[3].toInt() and 0xFF)
                     state.copy(
@@ -56,6 +79,11 @@ class RadioRepository(
                         lastMessage = "Frequência FM atualizada"
                     )
                 }
+                bytes.size >= 4 && bytes[0] == 0x03.toByte() && bytes[1] == 0x05.toByte() -> state.copy(
+                    currentFolder = bytes[2].toInt() and 0xFF,
+                    currentTrack = bytes[3].toInt() and 0xFF,
+                    lastMessage = "Faixa atual informada pelo rádio"
+                )
                 else -> state.copy(lastMessage = "RX ${bytes.size} bytes")
             }
         }
@@ -89,9 +117,9 @@ class RadioRepository(
     private fun applyOptimisticState(command: RadioCommand) {
         _radioState.update { state ->
             when (command) {
-                RadioCommand.VolumeUp -> state.copy(volume = (state.volume + 1).coerceAtMost(SAFE_VOLUME_MAX))
+                RadioCommand.VolumeUp -> state.copy(volume = (state.volume + 1).coerceAtMost(state.maxVolume))
                 RadioCommand.VolumeDown -> state.copy(volume = (state.volume - 1).coerceAtLeast(0))
-                is RadioCommand.SetVolume -> state.copy(volume = command.value.coerceIn(0, SAFE_VOLUME_MAX))
+                is RadioCommand.SetVolume -> state.copy(volume = command.value.coerceIn(0, state.maxVolume))
                 is RadioCommand.SetMode -> state.copy(mode = command.mode)
                 is RadioCommand.SetEq -> state.copy(eqPreset = command.preset)
                 is RadioCommand.SetBass -> state.copy(bass = command.value.coerceIn(RadioRanges.BASS_MIN, RadioRanges.BASS_MAX))
@@ -123,14 +151,14 @@ class RadioRepository(
                 RadioCommand.Ams,
                 RadioCommand.Clock,
                 RadioCommand.CallAnswerOrRedial,
-                RadioCommand.CallEnd,
-                is RadioCommand.SelectFolderTrack,
+                RadioCommand.CallEnd -> state
+                is RadioCommand.SelectFolderTrack -> state.copy(
+                    currentFolder = command.folder,
+                    currentTrack = command.track
+                )
+                
                 is RadioCommand.Raw -> state
             }
         }
-    }
-
-    private companion object {
-        const val SAFE_VOLUME_MAX = 5
     }
 }

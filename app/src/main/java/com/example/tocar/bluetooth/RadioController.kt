@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 interface RadioController {
     val devices: StateFlow<List<BluetoothDeviceInfo>>
     val connectionState: StateFlow<BluetoothConnectionState>
+    val signalStrength: StateFlow<Int?>
 
     fun hasRequiredPermissions(): Boolean
     fun requiredPermissions(): Array<String>

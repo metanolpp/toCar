@@ -30,6 +30,8 @@ class DesktopBridgeController(
 
     private val _connectionState = MutableStateFlow<BluetoothConnectionState>(BluetoothConnectionState.Disconnected)
     override val connectionState: StateFlow<BluetoothConnectionState> = _connectionState.asStateFlow()
+    private val _signalStrength = MutableStateFlow<Int?>(null)
+    override val signalStrength: StateFlow<Int?> = _signalStrength.asStateFlow()
 
     private var socket: Socket? = null
     private var writer: PrintWriter? = null
@@ -73,6 +75,7 @@ class DesktopBridgeController(
     }
 
     override fun disconnect() {
+        _signalStrength.value = null
         runCatching { writer?.println("DISCONNECT") }
         readerJob?.cancel()
         readerJob = null

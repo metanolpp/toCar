@@ -78,7 +78,8 @@ class DebugBleCommandReceiver : BroadcastReceiver() {
             scope = scope,
             onPacket = { bytes: ByteArray ->
             Log.i(TAG, "RX ${bytes.joinToString(" ") { "%02X".format(it.toInt() and 0xFF) }}")
-            }
+            },
+            onRssi = { rssi -> Log.i(TAG, "RSSI $rssi dBm") }
         )
         try {
             connection.connect()

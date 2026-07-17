@@ -13,9 +13,14 @@ import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
 private val CLIENT_CHARACTERISTIC_CONFIG_UUID: UUID =
@@ -27,12 +32,16 @@ class BleGattConnection(
     private val device: BluetoothDevice,
     private val scope: CoroutineScope,
     private val onPacket: suspend (ByteArray) -> Unit,
+    private val onRssi: (Int) -> Unit,
     private val autoConnect: Boolean = false,
     private val transport: Int = BluetoothDevice.TRANSPORT_LE
 ) {
     private var gatt: BluetoothGatt? = null
     private var txCharacteristic: BluetoothGattCharacteristic? = null
     private val ready = CompletableDeferred<Unit>()
+    private var rssiJob: Job? = null
+    private val gattOperationMutex = Mutex()
+    @Volatile private var writeCompletion: CompletableDeferred<Int>? = null
 
     private val callback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
@@ -104,6 +113,18 @@ class BleGattConnection(
             else ready.completeExceptionally(IllegalStateException("Falha confirmando notificacoes: $status"))
         }
 
+        override fun onReadRemoteRssi(gatt: BluetoothGatt, rssi: Int, status: Int) {
+            if (status == BluetoothGatt.GATT_SUCCESS) onRssi(rssi)
+        }
+
+        override fun onCharacteristicWrite(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            status: Int
+        ) {
+            writeCompletion?.complete(status)
+        }
+
         @Deprecated("Deprecated in Java")
         override fun onCharacteristicChanged(
             gatt: BluetoothGatt,
@@ -132,31 +153,55 @@ class BleGattConnection(
         withTimeout(CONNECT_TIMEOUT_MS) { ready.await() }
         kotlinx.coroutines.delay(SYNCHRONIZE_DELAY_MS)
         write(SYNCHRONIZE_PACKET)
+        rssiJob = scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                gattOperationMutex.withLock {
+                    gatt?.readRemoteRssi()
+                    delay(RSSI_OPERATION_WINDOW_MS)
+                }
+                delay(RSSI_INTERVAL_MS)
+            }
+        }
         Log.i(TAG, "synchronize address=${device.address} packet=0103")
     }
 
     suspend fun write(packet: ByteArray) = withContext(Dispatchers.IO) {
-        val activeGatt = gatt ?: error("BLE desconectado")
-        val characteristic = txCharacteristic ?: error("Characteristic FFF1 indisponivel")
-        characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-
-        val accepted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            activeGatt.writeCharacteristic(
-                characteristic,
-                packet,
-                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-            ) == BluetoothGatt.GATT_SUCCESS
-        } else {
-            @Suppress("DEPRECATION")
-            characteristic.value = packet
-            @Suppress("DEPRECATION")
-            activeGatt.writeCharacteristic(characteristic)
+        gattOperationMutex.withLock {
+            val activeGatt = gatt ?: error("BLE desconectado")
+            val characteristic = txCharacteristic ?: error("Characteristic FFF1 indisponivel")
+            characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            var accepted = false
+            repeat(WRITE_ENQUEUE_ATTEMPTS) { attempt ->
+                val completion = CompletableDeferred<Int>()
+                writeCompletion = completion
+                accepted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    activeGatt.writeCharacteristic(
+                        characteristic,
+                        packet,
+                        BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                    ) == BluetoothGatt.GATT_SUCCESS
+                } else {
+                    @Suppress("DEPRECATION")
+                    characteristic.value = packet
+                    @Suppress("DEPRECATION")
+                    activeGatt.writeCharacteristic(characteristic)
+                }
+                if (accepted) {
+                    val status = runCatching { withTimeout(WRITE_CALLBACK_TIMEOUT_MS) { completion.await() } }
+                        .getOrDefault(BluetoothGatt.GATT_SUCCESS)
+                    check(status == BluetoothGatt.GATT_SUCCESS) { "Falha na escrita BLE: status $status" }
+                    return@withLock
+                }
+                writeCompletion = null
+                if (attempt < WRITE_ENQUEUE_ATTEMPTS - 1) delay(WRITE_RETRY_DELAY_MS)
+            }
+            check(accepted) { "Falha ao enfileirar escrita BLE após $WRITE_ENQUEUE_ATTEMPTS tentativas" }
         }
-
-        check(accepted) { "Falha ao enfileirar escrita BLE" }
     }
 
     fun close() {
+        rssiJob?.cancel()
+        rssiJob = null
         runCatching { gatt?.disconnect() }
         runCatching { gatt?.close() }
         gatt = null
@@ -173,6 +218,11 @@ class BleGattConnection(
         const val TAG = "ToCarBLE"
         const val CONNECT_TIMEOUT_MS = 18_000L
         const val SYNCHRONIZE_DELAY_MS = 1_500L
+        const val RSSI_INTERVAL_MS = 3_000L
+        const val RSSI_OPERATION_WINDOW_MS = 180L
+        const val WRITE_ENQUEUE_ATTEMPTS = 5
+        const val WRITE_RETRY_DELAY_MS = 120L
+        const val WRITE_CALLBACK_TIMEOUT_MS = 2_000L
         val SYNCHRONIZE_PACKET = byteArrayOf(0x01, 0x03)
     }
 }

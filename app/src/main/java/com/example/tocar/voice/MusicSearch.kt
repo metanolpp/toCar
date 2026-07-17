@@ -25,7 +25,7 @@ sealed interface MusicSearchResult {
 }
 
 class MusicSearchEngine(
-    private val catalog: List<MusicEntry> = demoCatalog()
+    private val catalogProvider: () -> List<MusicEntry> = { demoCatalog() }
 ) {
     fun searchVoiceText(text: String): MusicSearchResult {
         val query = extractMusicQuery(text) ?: return MusicSearchResult.NoQuery
@@ -54,13 +54,13 @@ class MusicSearchEngine(
         return wordNumber?.takeIf { it in 1..optionCount }?.minus(1)
     }
 
-    fun catalogPreview(): List<MusicEntry> = catalog.take(8)
+    fun catalogPreview(): List<MusicEntry> = catalogProvider().take(8)
 
     private fun search(query: String): List<MusicEntry> {
         val queryTokens = query.normalizeForSearch().tokens()
         if (queryTokens.isEmpty()) return emptyList()
 
-        return catalog
+        return catalogProvider()
             .mapNotNull { entry ->
                 val haystack = "${entry.title} ${entry.artist.orEmpty()}".normalizeForSearch()
                 val haystackTokens = haystack.tokens()
@@ -159,4 +159,3 @@ class MusicSearchEngine(
         )
     }
 }
-

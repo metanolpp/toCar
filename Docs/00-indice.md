@@ -14,9 +14,10 @@
 - `10-voz-segundo-plano.md` - escuta em segundo plano via Foreground Service.
 - `11-estrutura-carlive-comandos-detectados.md` - inventário verificado por ADB/HCI, transporte BLE, comandos confirmados, modos e mensagens pendentes.
 - `12-emulador-bridge-windows.md` - execução no Android Emulator e acesso ao Bluetooth do notebook por meio do bridge Windows.
+- `13-diagnostico-conexao-roadstar.md` - histórico do diagnóstico no rádio real, causas das falhas e parâmetros finais da conexão BLE.
 
 ## Estado atual
 
-O app ja possui interface Compose, camada Bluetooth SPP, protocolo logico, log Raw, comandos de voz, busca de musica por voz, presets de audio/cor e um servico experimental de voz em segundo plano.
+O app possui interface Compose, controle BLE/GATT funcional no RS-2751BR PLUS, fallback SPP para outros módulos, protocolo lógico, log Raw, comandos de voz, busca de música por voz, presets de áudio/cor e serviço experimental de voz em segundo plano.
 
-Os bytes reais do Roadstar ainda nao estao mapeados. Comandos sem pacote confirmado sao bloqueados pelo `CommandEncoder`.
+O transporte BLE e um conjunto inicial de comandos reais já foram confirmados no rádio. Comandos ainda não capturados continuam bloqueados pelo `CommandEncoder`.

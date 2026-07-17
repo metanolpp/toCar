@@ -36,7 +36,7 @@ Nomes de dispositivos/anúncios encontrados no histórico Bluetooth:
 - `CAR-BT APP`;
 - `RS-2751BR PLUS-APP`.
 
-O endereço BLE observado na captura foi `41:42:93:88:36:80`. O endereço BLE pode ser privado/rotativo e não deve ser fixado no código.
+O endereço BLE observado e reconfirmado em conexão real foi `41:42:93:88:36:80`. No MIUI, o anúncio apareceu inicialmente como `00:00:00:00:00:00` e só foi associado ao endereço real após descoberta do sistema. O valor conhecido é usado como compatibilidade para o rádio testado, mas não deve ser presumido para toda unidade.
 
 ## Permissões do CarLive
 
@@ -70,6 +70,8 @@ Fluxo básico detectado:
 O rádio também usa Bluetooth clássico para áudio/telefonia (A2DP e possivelmente HFP/AVRCP). Isso é separado do canal BLE de controle. Não foi observado RFCOMM/SPP nos logs analisados; portanto, **BLE deve ser o backend primário de controle para este modelo**, mantendo SPP apenas como alternativa não confirmada para outros módulos.
 
 O handle `0x0009` é atribuído pelo servidor GATT e não deve ser codificado. O aplicativo deve localizar serviço e característica pelos UUIDs.
+
+O firmware observado não expõe o descritor CCCD `2902` em `FFF1`. O CarLive chama `setCharacteristicNotification(true)` e continua sem escrever esse descritor. Exigir `2902` fez o ToCar encerrar uma conexão válida; portanto ele é opcional neste modelo.
 
 ## Estrutura funcional encontrada no APK
 
@@ -137,15 +139,15 @@ O catálogo decompilado define troca sequencial como `08 01` e seleção direta 
 |---|---:|---|
 | `08 01` | 6 | consulta de estado/fonte |
 | `07 04` | 6 | ação da tela FM; possivelmente estação/preset/consulta |
-| `04 03 0E` a `04 03 11` | várias | ajuste numérico; respostas acrescentam `3F` |
-| `04 03 0A` a `04 03 0D` | 1 cada | mesma família de ajuste numérico |
+| `04 03 0E` a `04 03 11` | várias | volume absoluto; respostas incluem o limite do aparelho |
+| `04 03 0A` a `04 03 0D` | 1 cada | mesma família de volume absoluto |
 | `0E 01 07` | 3 | consulta/ajuste cujo valor atual é 7 |
 | `0B 01`, `0B 02`, `0B 03` | 2/1/1 | seleção de opção ou preset |
 | `01 02 01`, `01 02 02` | 1 cada | estado play/pause ou seleção binária |
 | `06 02 17 37 11 1A 07 09` | 1 | data/hora: 23:55:17 em 09/07/2026 |
 | `06 02 00 0A 1E 1A 07 0A` | 1 | outra escrita de relógio/data |
 
-A sequência `04 03 nn` é compatível com um valor absoluto, porque a notificação correspondente usa `04 03 nn 3F`. Não é seguro afirmar ainda se representa volume, bass, treble, balance ou fader.
+A sequência `04 03 nn` define volume absoluto. Na notificação `04 03 vv mm`, o CarLive atualiza o volume com `vv` e o máximo do controle com `mm`; por isso o ToCar usa o limite informado pelo dispositivo e mantém 32 apenas como fallback inicial.
 
 ## Mensagens RX e modelo de estado
 
@@ -155,7 +157,7 @@ Famílias identificadas:
 |---|---|
 | `0F 01` + ASCII | identificação; foi recebido `HEXING` |
 | `08 xx` | fonte/modo atual |
-| `04 03 vv 3F` | valor de ajuste e máscara/flag |
+| `04 03 vv mm` | volume atual `vv` e limite do dispositivo `mm` |
 | `09 01 xx` | flag de estado |
 | `0A ...` | estado de áudio/EQ ainda não rotulado |
 | `0D 01 hi lo` | frequência FM; valor big-endian escalado |
@@ -181,6 +183,9 @@ Metadados chegam fragmentados em UTF-16LE. O decoder deve acumular fragmentos co
 - serializar escritas: uma operação GATT por vez;
 - enviar `01 03` e aguardar estado inicial;
 - manter timeout, desconexão, reconexão limitada e fechamento correto do GATT.
+- aguardar 1.200 ms entre o fim da varredura e `connectGatt()`;
+- repetir até 3 vezes somente a falha transitória status 62, com intervalo de 1.800 ms;
+- manter seleção manual e estado visual `Connecting` até a inicialização completa.
 
 ### Comandos de primeira fase
 

@@ -7,9 +7,9 @@ data class ProtocolMap(
     val playPause: ByteArray = byteArrayOf(),
     val nextTrack: ByteArray = byteArrayOf(0x03, 0x02, 0x00),
     val previousTrack: ByteArray = byteArrayOf(0x03, 0x01, 0x00),
-    val introToggle: ByteArray = byteArrayOf(),
-    val repeatToggle: ByteArray = byteArrayOf(),
-    val randomToggle: ByteArray = byteArrayOf(),
+    val introToggle: ByteArray = byteArrayOf(0x04, 0x06, 0x01),
+    val repeatToggle: ByteArray = byteArrayOf(0x04, 0x06, 0x00),
+    val randomToggle: ByteArray = byteArrayOf(0x04, 0x06, 0x03),
     val skipMinus10: ByteArray = byteArrayOf(0x03, 0x03),
     val skipPlus10: ByteArray = byteArrayOf(0x03, 0x04),
     val directoryPrevious: ByteArray = byteArrayOf(0x03, 0x09),
@@ -50,6 +50,9 @@ class CommandEncoder(
             RadioCommand.DirectoryNext -> protocolMap.directoryNext
             RadioCommand.VolumeUp -> protocolMap.volumeUp
             RadioCommand.VolumeDown -> protocolMap.volumeDown
+            is RadioCommand.SetVolume -> command.value
+                .takeIf { it in 0..0xFF }
+                ?.let { byteArrayOf(0x04, 0x03, it.toByte()) }
             RadioCommand.Band -> protocolMap.band
             RadioCommand.Ams -> protocolMap.ams
             RadioCommand.Clock -> protocolMap.clock
@@ -64,16 +67,29 @@ class CommandEncoder(
                 RadioMode.BT -> byteArrayOf(0x08, 0x05)
                 RadioMode.COLOR -> null
             }
-            
-            is RadioCommand.SetVolume,
+            is RadioCommand.SetLoudness -> byteArrayOf(0x04, 0x04)
+            is RadioCommand.SelectFolderTrack -> byteArrayOf(
+                0x03, 0x05,
+                command.folder.coerceIn(0, 255).toByte(),
+                command.track.coerceIn(0, 255).toByte()
+            )
+            is RadioCommand.SetPanelColor -> when (command.color) {
+                PanelColor.RED -> byteArrayOf(0x0E, 0x00, 0x01)
+                PanelColor.GREEN -> byteArrayOf(0x0E, 0x00, 0x02)
+                PanelColor.BLUE -> byteArrayOf(0x0E, 0x00, 0x03)
+                PanelColor.AMBER -> byteArrayOf(0x0E, 0x00, 0x04)
+                PanelColor.CYAN -> byteArrayOf(0x0E, 0x00, 0x05)
+                PanelColor.WHITE -> byteArrayOf(0x0E, 0x00, 0x07)
+                PanelColor.AUTO -> byteArrayOf(0x0E, 0x00, 0x08)
+                PanelColor.OFF -> null
+            }
+
             is RadioCommand.SetEq,
             is RadioCommand.SetBass,
             is RadioCommand.SetTreble,
             is RadioCommand.SetBalance,
             is RadioCommand.SetFader,
-            is RadioCommand.SetLoudness,
-            is RadioCommand.SetPanelColor,
-            is RadioCommand.SelectFolderTrack -> null
+            -> null
         }
 
         return packet?.takeIf { it.isNotEmpty() }?.let {

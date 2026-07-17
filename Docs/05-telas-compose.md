@@ -15,11 +15,16 @@ ToCarTab.Log      -> Log
 Funcoes:
 
 - Pedir permissoes Bluetooth, microfone e notificacao.
-- Exibir dispositivos pareados.
-- Destacar nomes compativeis: `CAR-BT`, `RS-2751BR`, `CAR KIT-APP`.
-- Conectar via SPP.
+- Exibir todos os dispositivos pareados para seleção manual.
+- Destacar nomes compatíveis com o Roadstar sem ocultar os demais.
+- Não conectar automaticamente ao abrir a tela.
+- Exibir `Tentando conectar...` durante varredura e negociação GATT.
+- Exibir `Conectado` somente após serviço `FFF0`, característica `FFF1` e sincronização inicial.
+- Bloquear `Atualizar lista` durante tentativa ou conexão ativa.
 - Desconectar.
 - Mostrar estado de conexao.
+
+Fluxo esperado: conectar o áudio nas configurações Android, abrir o ToCar, escolher o rádio, tocar em **Conectar** e acompanhar a mudança explícita de estado.
 
 ## Controle
 
@@ -121,4 +126,3 @@ Status:
 
 - Experimental.
 - Pode ser limitado pelo Android ou pelo fabricante, especialmente com tela bloqueada.
-

@@ -22,6 +22,8 @@ class DemoRadioController(
 
     private val _connectionState = MutableStateFlow<BluetoothConnectionState>(BluetoothConnectionState.Disconnected)
     override val connectionState: StateFlow<BluetoothConnectionState> = _connectionState.asStateFlow()
+    private val _signalStrength = MutableStateFlow<Int?>(null)
+    override val signalStrength: StateFlow<Int?> = _signalStrength.asStateFlow()
 
     private var onPacket: (suspend (ByteArray) -> Unit)? = null
 
@@ -43,6 +45,7 @@ class DemoRadioController(
         scope.launch {
             delay(450)
             _connectionState.value = BluetoothConnectionState.Connected(deviceInfo)
+            _signalStrength.value = -54
             onPacket(byteArrayOf(0x0F, 0x01, 0x44, 0x45, 0x4D, 0x4F))
             onPacket(byteArrayOf(0x08, 0x04))
             onPacket(byteArrayOf(0x0D, 0x01, 0x26, 0x48))
@@ -56,6 +59,7 @@ class DemoRadioController(
     }
 
     override fun disconnect() {
+        _signalStrength.value = null
         onPacket = null
         _connectionState.value = BluetoothConnectionState.Disconnected
     }

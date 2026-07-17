@@ -6,7 +6,8 @@
 - Jetpack Compose.
 - Material Design 3.
 - Coroutines + Flow.
-- Bluetooth classico SPP.
+- Bluetooth LE/GATT para controle do RS-2751BR PLUS.
+- Bluetooth clássico A2DP mantido pelo Android para áudio; SPP permanece como fallback não confirmado.
 - SpeechRecognizer e TextToSpeech.
 - Foreground Service para voz em segundo plano.
 - SharedPreferences para presets locais.
@@ -25,7 +26,11 @@ app/src/main/java/com/example/tocar/
 │
 ├── bluetooth/
 │   ├── AndroidBluetoothController.kt
+│   ├── BleGattConnection.kt
 │   ├── BluetoothModels.kt
+│   ├── RadioController.kt
+│   ├── DesktopBridgeController.kt
+│   ├── DemoRadioController.kt
 │   └── SppConnection.kt
 │
 ├── protocol/
@@ -60,7 +65,7 @@ CommandEncoder
    ↓
 AndroidBluetoothController
    ↓
-SppConnection.outputStream
+BleGattConnection / característica FFF1
    ↓
 Radio Roadstar
 ```
@@ -70,7 +75,7 @@ Fluxo de retorno:
 ```text
 Radio Roadstar
    ↓
-SppConnection.inputStream
+Notificações GATT em FFF1
    ↓
 RadioRepository.onRxPacket
    ↓
@@ -79,7 +84,7 @@ PacketLogger
 Tela Log
 ```
 
-`ResponseDecoder` ainda nao foi implementado porque os pacotes RX reais do Roadstar ainda nao foram mapeados.
+`RadioRepository` já interpreta respostas básicas de modo e frequência. A decodificação completa de metadados e ajustes continua incremental.
 
 ## Regra central
 
@@ -159,4 +164,3 @@ Extra: 258EAFA5-E914-47DA-95CA-C5AB0DC85B11
 ```
 
 UUID de conexao nao equivale a bytes de comando. Os comandos continuam bloqueados no `CommandEncoder` ate captura ou decompilacao confirmada.
-

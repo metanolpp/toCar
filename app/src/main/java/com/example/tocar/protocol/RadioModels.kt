@@ -30,6 +30,7 @@ enum class PanelColor(val label: String, val hex: String) {
 }
 
 object RadioRanges {
+    const val DEFAULT_VOLUME_MAX = 63
     const val BASS_MIN = -7
     const val BASS_MAX = 7
     const val TREBLE_MIN = -7
@@ -42,11 +43,15 @@ object RadioRanges {
 
 data class RadioState(
     val connected: Boolean = false,
+    val powerOn: Boolean? = null,
     val deviceName: String? = null,
     val mode: RadioMode? = null,
     val fmFrequencyMhz: Double? = null,
     val stationName: String? = null,
+    val currentFolder: Int? = null,
+    val currentTrack: Int? = null,
     val volume: Int = 18,
+    val maxVolume: Int = RadioRanges.DEFAULT_VOLUME_MAX,
     val bass: Int = 0,
     val treble: Int = 0,
     val balance: Int = 0,

@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,11 +58,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.tocar.bluetooth.AndroidBluetoothController
 import com.example.tocar.bluetooth.BluetoothConnectionState
 import com.example.tocar.bluetooth.BluetoothDeviceInfo
@@ -85,8 +90,21 @@ import com.example.tocar.repository.RadioRepository
 import com.example.tocar.voice.MusicEntry
 import com.example.tocar.voice.MusicSearchEngine
 import com.example.tocar.voice.MusicSearchResult
+import com.example.tocar.voice.PlaylistCatalog
 import com.example.tocar.voice.BackgroundVoiceService
 import com.example.tocar.voice.VoiceCommandParser
+import com.example.tocar.ui.components.retro.RetroBottomNavigation
+import com.example.tocar.ui.components.retro.RetroBluetoothSignal
+import com.example.tocar.ui.components.retro.RetroButton
+import com.example.tocar.ui.components.retro.RetroLevelMeter
+import com.example.tocar.ui.components.retro.RetroPanel
+import com.example.tocar.ui.components.retro.RetroPlayerFrame
+import com.example.tocar.ui.components.retro.RetroSectionTitle
+import com.example.tocar.ui.components.retro.RetroSegmentedBar
+import com.example.tocar.ui.components.retro.RetroSourceButton
+import com.example.tocar.ui.components.retro.RetroTransportButton
+import com.example.tocar.ui.components.retro.RetroWindowHeader
+import com.example.tocar.ui.theme.retro.RetroColors
 import java.util.Locale
 
 private enum class ToCarTab(val label: String) {
@@ -121,7 +139,8 @@ fun ToCarApp() {
         )
     }
     val voiceParser = remember { VoiceCommandParser() }
-    val musicSearchEngine = remember { MusicSearchEngine() }
+    val playlistCatalog = remember { PlaylistCatalog(context) }
+    val musicSearchEngine = remember(playlistCatalog) { MusicSearchEngine { playlistCatalog.entries.value } }
     var pendingMusicChoices by remember { mutableStateOf<List<MusicEntry>>(emptyList()) }
     var textToSpeech by remember { mutableStateOf<TextToSpeech?>(null) }
 
@@ -215,9 +234,12 @@ fun ToCarApp() {
     val radioState by repository.radioState.collectAsState()
     val devices by bluetoothController.devices.collectAsState()
     val connectionState by bluetoothController.connectionState.collectAsState()
+    val signalStrength by bluetoothController.signalStrength.collectAsState()
     val logs by logger.entries.collectAsState()
     val presets by presetRepository.presets.collectAsState()
-    var selectedTab by remember { mutableStateOf(ToCarTab.Connect) }
+    val playlistEntries by playlistCatalog.entries.collectAsState()
+    var selectedTab by remember { mutableStateOf(ToCarTab.Controls) }
+    var voiceEnabled by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
@@ -256,19 +278,11 @@ fun ToCarApp() {
 
     Scaffold(
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = 0.dp
-            ) {
-                ToCarTab.entries.forEach { tab ->
-                    NavigationBarItem(
-                        selected = selectedTab == tab,
-                        onClick = { selectedTab = tab },
-                        icon = { Text(tab.label.take(1), fontWeight = FontWeight.Black) },
-                        label = { Text(tab.label.uppercase(Locale.getDefault())) }
-                    )
-                }
-            }
+            RetroBottomNavigation(
+                labels = ToCarTab.entries.map { it.label },
+                selectedIndex = ToCarTab.entries.indexOf(selectedTab),
+                onSelected = { selectedTab = ToCarTab.entries[it] }
+            )
         }
     ) { padding ->
         Column(
@@ -277,7 +291,7 @@ fun ToCarApp() {
                 .background(MaterialTheme.colorScheme.background)
                 .padding(padding)
         ) {
-            StatusHeader(radioState, connectionState)
+            StatusHeader(radioState, connectionState, signalStrength) { repository.send(RadioCommand.PowerToggle) }
             when (selectedTab) {
                 ToCarTab.Connect -> BluetoothScreen(
                     connectionState = connectionState,
@@ -289,11 +303,30 @@ fun ToCarApp() {
                     },
                     onDisconnect = { bluetoothController.disconnect() }
                 )
-                ToCarTab.Controls -> ControlsScreen(radioState, repository::send)
+                ToCarTab.Controls -> ControlsScreen(
+                    radioState = radioState,
+                    onCommand = repository::send,
+                    onAddCurrent = {
+                        val folder = radioState.currentFolder
+                        val track = radioState.currentTrack
+                        if (folder != null && track != null) {
+                            val known = playlistEntries.firstOrNull { it.folder == folder && it.track == track }
+                            playlistCatalog.add(
+                                known ?: MusicEntry(
+                                    title = "Faixa $track",
+                                    artist = radioState.mode?.label,
+                                    folder = folder,
+                                    track = track
+                                )
+                            )
+                        }
+                    }
+                )
                 ToCarTab.Files -> FilesAndVoiceScreen(
                     radioState = radioState,
-                    catalogPreview = musicSearchEngine.catalogPreview(),
+                    playlist = playlistEntries,
                     pendingMusicChoices = pendingMusicChoices,
+                    voiceEnabled = voiceEnabled,
                     onCommand = repository::send,
                     onListen = {
                         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -303,18 +336,18 @@ fun ToCarApp() {
                         }
                         speechLauncher.launch(intent)
                     },
-                    onStartBackgroundVoice = {
+                    onVoiceEnabledChange = { enabled ->
+                        voiceEnabled = enabled
                         val intent = Intent(context, BackgroundVoiceService::class.java)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            context.startForegroundService(intent)
+                        if (enabled) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
+                            else context.startService(intent)
                         } else {
-                            context.startService(intent)
+                            context.stopService(intent)
                         }
                     },
-                    onStopBackgroundVoice = {
-                        context.stopService(Intent(context, BackgroundVoiceService::class.java))
-                    },
-                    onTypedVoice = { text -> handleVoiceText(text, "Texto") }
+                    onTypedVoice = { text -> handleVoiceText(text, "Texto") },
+                    onAddMusic = playlistCatalog::add
                 )
                 ToCarTab.Audio -> AudioScreen(
                     radioState = radioState,
@@ -336,40 +369,91 @@ fun ToCarApp() {
 @Composable
 private fun StatusHeader(
     radioState: RadioState,
-    connectionState: BluetoothConnectionState
+    connectionState: BluetoothConnectionState,
+    signalStrength: Int?,
+    onPowerClick: () -> Unit
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 0.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-    ) {
-        Row(
+    RetroPlayerFrame {
+      Column(Modifier.fillMaxWidth()) {
+        RetroWindowHeader(
+            title = "METANAMP",
+            powerOn = radioState.powerOn,
+            onPowerClick = onPowerClick
+        )
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .background(RetroColors.Background)
+                .border(2.dp, RetroColors.BorderMedium)
+                .padding(horizontal = 9.dp, vertical = 6.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(9.dp)
-                    .clip(CircleShape)
-                    .background(if (radioState.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
-            )
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text("TOCAR // ROADSTAR PLAYER", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
-                Text(connectionLabel(connectionState).uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column {
+                Text("TOCAR // ROADSTAR PLAYER", color = RetroColors.NeonGreen, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                Spacer(Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (radioState.connected) "▶" else "■", color = RetroColors.DisplayGreen, style = MaterialTheme.typography.titleLarge)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (radioState.connected) radioState.volume.toString().padStart(2, '0') else "--:--",
+                        color = RetroColors.DisplayGreen,
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Black
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) {
+                        if (!radioState.connected) {
+                            RetroBluetoothSignal(connected = false, rssi = null)
+                        } else {
+                            Text((radioState.mode?.label ?: "BLUETOOTH") + " // PLAYLIST LOCAL", color = RetroColors.DisplayGreen, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            RetroBluetoothSignal(connected = true, rssi = signalStrength)
+                        }
+                        Text("${radioState.eqPreset.label.uppercase(Locale.getDefault())} EQ    VOL ${radioState.volume}    ${if (radioState.loudness) "LOUD" else "NORMAL"}", color = RetroColors.DisplayGreen, fontSize = 8.sp)
+                    }
+                    RetroLevelMeter()
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(connectionLabel(connectionState).uppercase(Locale.getDefault()), color = RetroColors.TextSecondary, fontSize = 8.sp)
             }
-            AssistChip(
-                onClick = {},
-                label = { Text((radioState.mode?.label ?: "OFFLINE").uppercase(Locale.getDefault()), fontWeight = FontWeight.Bold) }
-            )
+        }
+      }
+    }
+}
+
+@Composable
+private fun WinampTitleBar(title: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(27.dp)
+            .background(Brush.horizontalGradient(listOf(Color(0xFF10121A), Color(0xFF55596A), Color(0xFF10121A))))
+            .padding(horizontal = 5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("✣", color = Color(0xFFD4B96F), fontWeight = FontWeight.Black)
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.weight(1f).height(7.dp).background(Color(0xFFC0A45A)).border(1.dp, Color.Black))
+        Text("  $title  ", color = Color(0xFFE0E0DB), fontWeight = FontWeight.Black)
+        Box(Modifier.weight(1f).height(7.dp).background(Color(0xFFC0A45A)).border(1.dp, Color.Black))
+        Spacer(Modifier.width(8.dp))
+        Text("–  ×", color = Color(0xFFD4B96F), fontWeight = FontWeight.Black)
+    }
+}
+
+@Composable
+private fun LevelMeter() {
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
+        listOf(12, 20, 29, 36).forEachIndexed { index, height ->
+            Box(Modifier.width(7.dp).height(height.dp).background(if (index == 3) Color(0xFFC7BD38) else MaterialTheme.colorScheme.primary))
         }
     }
 }
 
 @Composable
-private fun PlayerDisplay(radioState: RadioState) {
+private fun PlayerDisplay(
+    radioState: RadioState,
+    onCommand: (RadioCommand) -> Unit,
+    onAddCurrent: () -> Unit
+) {
     val sourceTitle = when (radioState.mode) {
         RadioMode.RADIO -> {
             val frequency = radioState.fmFrequencyMhz?.let { String.format(Locale.US, "%.1f FM", it) } ?: "--.- FM"
@@ -381,30 +465,48 @@ private fun PlayerDisplay(radioState: RadioState) {
         RadioMode.BT -> "BLUETOOTH AUDIO"
         RadioMode.AUX_IN -> "AUX INPUT"
         RadioMode.COLOR -> "PAINEL RGB"
-        null -> "NO SIGNAL // CONECTE O RÁDIO"
+        null -> if (radioState.currentFolder != null && radioState.currentTrack != null) {
+            "PASTA ${radioState.currentFolder} // FAIXA ${radioState.currentTrack}"
+        } else {
+            "CONTROLES DE REPRODUÇÃO"
+        }
     }
 
-    ControlPanel {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("TOCAR CLASSIC PLAYER", color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Black)
-                Spacer(Modifier.height(6.dp))
-                Text(sourceTitle, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                Text("${radioState.eqPreset.label.uppercase(Locale.getDefault())} EQ  //  VOL ${radioState.volume.toString().padStart(2, '0')}  //  ${if (radioState.loudness) "LOUD" else "NORMAL"}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(if (radioState.connected) "● ONLINE" else "○ OFFLINE", color = if (radioState.connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                Text(radioState.mode?.label?.uppercase(Locale.getDefault()) ?: "---", color = MaterialTheme.colorScheme.tertiary)
-            }
-        }
+    RetroPanel {
+        Text(sourceTitle, color = RetroColors.NeonGreen, fontWeight = FontWeight.Black)
         Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
-            val levels = listOf(3, 6, 9, 5, 11, 8, 4, 7, 10, 6, 3, 8)
-            levels.forEach { level ->
-                Box(Modifier.weight(1f).height((level * 3).dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)))
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth()) {
+            listOf(
+                "|◀" to RadioCommand.PreviousTrack,
+                "▶" to RadioCommand.PlayPause,
+                "❚❚" to RadioCommand.PlayPause,
+                "■" to RadioCommand.MuteToggle,
+                "▶|" to RadioCommand.NextTrack
+            ).forEach { (label, command) ->
+                RetroTransportButton(label, Modifier.weight(1f)) { onCommand(command) }
             }
+            RetroTransportButton("⇄ SHUFFLE", Modifier.weight(1.6f)) { onCommand(RadioCommand.RandomToggle) }
+            RetroButton(
+                label = "+",
+                modifier = Modifier.weight(0.7f),
+                enabled = radioState.currentFolder != null && radioState.currentTrack != null,
+                height = 32.dp,
+                onClick = onAddCurrent
+            )
         }
     }
+}
+
+@Composable
+private fun MetallicButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(43.dp).shadow(3.dp, RoundedCornerShape(1.dp)),
+        shape = RoundedCornerShape(1.dp),
+        border = BorderStroke(1.dp, Color(0xFF74777D)),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF292B2E), contentColor = MaterialTheme.colorScheme.primary),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(2.dp)
+    ) { Text(label, fontWeight = FontWeight.Black) }
 }
 
 @Composable
@@ -509,127 +611,146 @@ private fun BluetoothScreen(
 @Composable
 private fun ControlsScreen(
     radioState: RadioState,
-    onCommand: (RadioCommand) -> Unit
+    onCommand: (RadioCommand) -> Unit,
+    onAddCurrent: () -> Unit = {}
 ) {
-    var powerSelected by remember { mutableStateOf(false) }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+            .padding(horizontal = 4.dp, vertical = 3.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        SectionTitle("Painel de controle")
-        PlayerDisplay(radioState)
-        ControlPanel {
-            Text("Comandos mapeados", fontWeight = FontWeight.SemiBold)
+        PlayerDisplay(radioState, onCommand, onAddCurrent)
+        RetroSectionTitle("CONTROLES")
+        RetroPanel {
+            Text("COMANDOS MAPEADOS", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black, fontSize = 12.sp)
             Text(
-                "Controles básicos preservados do catálogo legado CarLive.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                "CONTROLES BÁSICOS PRESERVADOS DO CATÁLOGO LEGADO CARLIVE.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 8.sp,
+                maxLines = 1
             )
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = { onCommand(RadioCommand.ModeNext) }, modifier = Modifier.weight(1f)) {
-                    Text("Mode")
-                }
-                Button(onClick = { onCommand(RadioCommand.PreviousTrack) }, modifier = Modifier.weight(1f)) {
-                    Text("Anterior")
-                }
-                Button(onClick = { onCommand(RadioCommand.NextTrack) }, modifier = Modifier.weight(1f)) {
-                    Text("Proxima")
-                }
+            Spacer(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                RetroButton("MODE", Modifier.weight(1f)) { onCommand(RadioCommand.ModeNext) }
+                RetroButton("ANTERIOR", Modifier.weight(1f)) { onCommand(RadioCommand.PreviousTrack) }
+                RetroButton("PRÓXIMA", Modifier.weight(1f)) { onCommand(RadioCommand.NextTrack) }
             }
         }
 
-        ControlPanel {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                ActionButton("Power", selected = powerSelected) {
-                    powerSelected = !powerSelected
-                    onCommand(RadioCommand.PowerToggle)
-                }
-                ActionButton("Mode") { onCommand(RadioCommand.ModeNext) }
-                ActionButton("Mute") { onCommand(RadioCommand.MuteToggle) }
-                ActionButton("AMS") { onCommand(RadioCommand.Ams) }
-                ActionButton("Band") { onCommand(RadioCommand.Band) }
+        RetroPanel {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                RetroButton("MUTE", Modifier.weight(1f)) { onCommand(RadioCommand.MuteToggle) }
+                RetroButton("AMS", Modifier.weight(1f)) { onCommand(RadioCommand.Ams) }
+                RetroButton("BAND", Modifier.weight(1f)) { onCommand(RadioCommand.Band) }
             }
         }
 
-        ControlPanel {
-            Text("Fonte", fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                RadioMode.entries.forEach { mode ->
-                    FilterChip(
-                        selected = radioState.mode == mode,
-                        onClick = { onCommand(RadioCommand.SetMode(mode)) },
-                        label = { Text(mode.label) }
-                    )
+        RetroPanel(title = "FONTE") {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                listOf(RadioMode.RADIO, RadioMode.USB, RadioMode.SD, RadioMode.AUX_IN).forEach { mode ->
+                    RetroSourceButton(mode.label, radioState.mode == mode, Modifier.weight(1f)) {
+                        onCommand(RadioCommand.SetMode(mode))
+                    }
                 }
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                RetroSourceButton("BLUETOOTH", radioState.mode == RadioMode.BT, Modifier.weight(2f)) {
+                    onCommand(RadioCommand.SetMode(RadioMode.BT))
+                }
+                RetroSourceButton("COR", radioState.mode == RadioMode.COLOR, Modifier.weight(1f)) {
+                    onCommand(RadioCommand.SetMode(RadioMode.COLOR))
+                }
+                RetroButton("CLOCK", Modifier.weight(1f), enabled = false) {}
             }
         }
 
-        ControlPanel {
+        RetroPanel {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Volume ${radioState.volume}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                OutlinedButton(onClick = { onCommand(RadioCommand.VolumeDown) }) { Text("-") }
-                Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick = { onCommand(RadioCommand.VolumeUp) }) { Text("+") }
+                Text("VOLUME ${radioState.volume} / ${radioState.maxVolume}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                RetroButton("−", Modifier.width(43.dp)) { onCommand(RadioCommand.VolumeDown) }
+                Spacer(Modifier.width(6.dp))
+                RetroButton("+", Modifier.width(43.dp)) { onCommand(RadioCommand.VolumeUp) }
             }
-            Slider(
-                value = radioState.volume.toFloat(),
-                onValueChange = { onCommand(RadioCommand.SetVolume(it.toInt())) },
-                valueRange = 0f..5f,
-                steps = 4
-            )
+            RetroSegmentedBar(radioState.volume, radioState.maxVolume, Modifier.fillMaxWidth())
         }
 
-        ControlPanel {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                ElevatedButton(onClick = { onCommand(RadioCommand.PreviousTrack) }) { Text("Anterior") }
-                Button(onClick = { onCommand(RadioCommand.PlayPause) }) { Text("Play/Pause") }
-                ElevatedButton(onClick = { onCommand(RadioCommand.NextTrack) }) { Text("Proxima") }
+        RetroPanel(title = "TRANSPORTE") {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                RetroButton("ANTERIOR", Modifier.weight(1f)) { onCommand(RadioCommand.PreviousTrack) }
+                RetroButton("PLAY/PAUSE", Modifier.weight(1.2f)) { onCommand(RadioCommand.PlayPause) }
+                RetroButton("PRÓXIMA", Modifier.weight(1f)) { onCommand(RadioCommand.NextTrack) }
             }
         }
 
-        ControlPanel {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                ActionButton("INT") { onCommand(RadioCommand.IntroToggle) }
-                ActionButton("RPT") { onCommand(RadioCommand.RepeatToggle) }
-                ActionButton("RDM") { onCommand(RadioCommand.RandomToggle) }
-                ActionButton("-10") { onCommand(RadioCommand.SkipMinus10) }
-                ActionButton("+10") { onCommand(RadioCommand.SkipPlus10) }
-                ActionButton("DIR-") { onCommand(RadioCommand.DirectoryPrevious) }
-                ActionButton("DIR+") { onCommand(RadioCommand.DirectoryNext) }
+        RetroPanel(title = "FUNÇÕES") {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                RetroButton("INT", Modifier.weight(1f)) { onCommand(RadioCommand.IntroToggle) }
+                RetroButton("RPT", Modifier.weight(1f)) { onCommand(RadioCommand.RepeatToggle) }
+                RetroButton("RDM", Modifier.weight(1f)) { onCommand(RadioCommand.RandomToggle) }
+                RetroButton("-10", Modifier.weight(1f)) { onCommand(RadioCommand.SkipMinus10) }
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                RetroButton("+10", Modifier.weight(1f)) { onCommand(RadioCommand.SkipPlus10) }
+                RetroButton("DIR-", Modifier.weight(1f)) { onCommand(RadioCommand.DirectoryPrevious) }
+                RetroButton("DIR+", Modifier.weight(1f)) { onCommand(RadioCommand.DirectoryNext) }
+                RetroButton("LOUD", Modifier.weight(1f), active = radioState.loudness) { onCommand(RadioCommand.SetLoudness(!radioState.loudness)) }
             }
         }
 
-        ControlPanel {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(onClick = { onCommand(RadioCommand.CallAnswerOrRedial) }) { Text("Atender") }
-                OutlinedButton(onClick = { onCommand(RadioCommand.CallEnd) }) { Text("Encerrar") }
+        RetroPanel {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                RetroButton("ATENDER  ☎", Modifier.weight(1f)) { onCommand(RadioCommand.CallAnswerOrRedial) }
+                RetroButton("ENCERRAR  ☎", Modifier.weight(1f)) { onCommand(RadioCommand.CallEnd) }
             }
         }
     }
 }
 
 @Composable
+private fun SourceButton(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.height(28.dp),
+        shape = RoundedCornerShape(1.dp),
+        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else Color(0xFF55585E)),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = if (selected) Color(0xFF416E20) else Color(0xFF202225),
+            contentColor = MaterialTheme.colorScheme.primary
+        ),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp)
+    ) { Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1) }
+}
+
+@Composable
+private fun DisplayOnlyButton(label: String, modifier: Modifier) {
+    Box(
+        modifier = modifier
+            .height(28.dp)
+            .background(Color(0xFF202225), RoundedCornerShape(1.dp))
+            .border(1.dp, Color(0xFF55585E), RoundedCornerShape(1.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
 private fun FilesAndVoiceScreen(
     radioState: RadioState,
-    catalogPreview: List<MusicEntry>,
+    playlist: List<MusicEntry>,
     pendingMusicChoices: List<MusicEntry>,
+    voiceEnabled: Boolean,
     onCommand: (RadioCommand) -> Unit,
     onListen: () -> Unit,
-    onStartBackgroundVoice: () -> Unit,
-    onStopBackgroundVoice: () -> Unit,
-    onTypedVoice: (String) -> Unit
+    onVoiceEnabledChange: (Boolean) -> Unit,
+    onTypedVoice: (String) -> Unit,
+    onAddMusic: (MusicEntry) -> Unit
 ) {
     var typedCommand by remember { mutableStateOf("quero this is ritmym of the night") }
-    var playlist by remember(catalogPreview) { mutableStateOf(catalogPreview) }
     var newTitle by remember { mutableStateOf("") }
     var newFolder by remember { mutableStateOf("1") }
     var newTrack by remember { mutableStateOf("1") }
@@ -668,14 +789,14 @@ private fun FilesAndVoiceScreen(
                     val folder = newFolder.toIntOrNull() ?: return@Button
                     val track = newTrack.toIntOrNull() ?: return@Button
                     if (newTitle.isNotBlank()) {
-                        playlist = playlist + MusicEntry(newTitle.trim(), folder = folder, track = track)
+                        onAddMusic(MusicEntry(newTitle.trim(), folder = folder, track = track))
                         newTitle = ""
                     }
                 }) { Text("ADD MÚSICA") }
                 OutlinedButton(onClick = {
                     val folder = newFolder.toIntOrNull() ?: return@OutlinedButton
                     val title = newTitle.ifBlank { "Pasta $folder" }
-                    playlist = playlist + MusicEntry("[DIR] $title", folder = folder, track = 1)
+                    onAddMusic(MusicEntry("[DIR] $title", folder = folder, track = 1))
                     newTitle = ""
                 }) { Text("ADD PASTA") }
             }
@@ -703,16 +824,20 @@ private fun FilesAndVoiceScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(12.dp))
-            Button(onClick = onListen, modifier = Modifier.fillMaxWidth()) { Text("Ouvir comando") }
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = onStartBackgroundVoice, modifier = Modifier.weight(1f)) {
-                    Text("Ouvir em segundo plano")
-                }
-                OutlinedButton(onClick = onStopBackgroundVoice, modifier = Modifier.weight(1f)) {
-                    Text("Parar")
-                }
+            RetroButton(
+                label = if (voiceEnabled) "VOZ LIGADA" else "VOZ DESLIGADA",
+                modifier = Modifier.fillMaxWidth(),
+                active = voiceEnabled
+            ) {
+                onVoiceEnabledChange(!voiceEnabled)
             }
+            Spacer(Modifier.height(8.dp))
+            RetroButton(
+                label = "BUSCAR MÚSICA POR VOZ",
+                modifier = Modifier.fillMaxWidth(),
+                enabled = voiceEnabled,
+                onClick = onListen
+            )
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = typedCommand,
@@ -722,7 +847,7 @@ private fun FilesAndVoiceScreen(
                 singleLine = true
             )
             Spacer(Modifier.height(10.dp))
-            OutlinedButton(onClick = { onTypedVoice(typedCommand) }, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = { onTypedVoice(typedCommand) }, modifier = Modifier.fillMaxWidth(), enabled = voiceEnabled) {
                 Text("Interpretar texto")
             }
             radioState.lastVoiceText?.let {
@@ -754,7 +879,7 @@ private fun FilesAndVoiceScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(10.dp))
-            catalogPreview.forEach { entry ->
+            playlist.take(8).forEach { entry ->
                 Text("${entry.spokenLabel} - pasta ${entry.folder}, musica ${entry.track}")
             }
         }
@@ -1004,7 +1129,7 @@ private fun ControlPanel(content: @Composable () -> Unit) {
         tonalElevation = 0.dp,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(horizontal = 7.dp, vertical = 5.dp)) {
             content()
         }
     }
@@ -1073,3 +1198,42 @@ private fun commandLabel(command: RadioCommand): String = when (command) {
     RadioCommand.PreviousStation -> "sintonia anterior"
     else -> command::class.simpleName ?: "RadioCommand"
 }
+
+@Composable
+private fun RetroPlayerPreviewContent(state: RadioState) {
+    Column(Modifier.fillMaxSize().background(RetroColors.Background)) {
+        StatusHeader(
+            state,
+            if (state.connected) BluetoothConnectionState.Connected(BluetoothDeviceInfo("RS-2751BR PLUS", "00:00:00:00:00:00", true)) else BluetoothConnectionState.Disconnected,
+            if (state.connected) -58 else null
+        ) {}
+        ControlsScreen(radioState = state, onCommand = {})
+    }
+}
+
+@Preview(name = "Player conectado", widthDp = 360, heightDp = 900)
+@Composable private fun PreviewConnected() = RetroPlayerPreviewContent(RadioState(connected = true, powerOn = true, deviceName = "RS-2751BR PLUS", mode = RadioMode.USB, volume = 12))
+
+@Preview(name = "Player desconectado", widthDp = 360, heightDp = 900)
+@Composable private fun PreviewDisconnected() = RetroPlayerPreviewContent(RadioState())
+
+@Preview(name = "USB selecionado", widthDp = 360, heightDp = 900)
+@Composable private fun PreviewUsb() = RetroPlayerPreviewContent(RadioState(mode = RadioMode.USB, volume = 24))
+
+@Preview(name = "Bluetooth selecionado", widthDp = 360, heightDp = 900)
+@Composable private fun PreviewBluetooth() = RetroPlayerPreviewContent(RadioState(mode = RadioMode.BT, volume = 24))
+
+@Preview(name = "Reprodução ativa", widthDp = 360, heightDp = 900)
+@Composable private fun PreviewPlaying() = RetroPlayerPreviewContent(RadioState(connected = true, powerOn = true, mode = RadioMode.USB, volume = 18))
+
+@Preview(name = "Reprodução pausada", widthDp = 360, heightDp = 900)
+@Composable private fun PreviewPaused() = RetroPlayerPreviewContent(RadioState(mode = RadioMode.USB, volume = 18))
+
+@Preview(name = "Volume baixo", widthDp = 360, heightDp = 900)
+@Composable private fun PreviewVolumeLow() = RetroPlayerPreviewContent(RadioState(mode = RadioMode.USB, volume = 3))
+
+@Preview(name = "Volume médio", widthDp = 360, heightDp = 900)
+@Composable private fun PreviewVolumeMedium() = RetroPlayerPreviewContent(RadioState(mode = RadioMode.USB, volume = 16))
+
+@Preview(name = "Volume alto", widthDp = 360, heightDp = 900)
+@Composable private fun PreviewVolumeHigh() = RetroPlayerPreviewContent(RadioState(mode = RadioMode.USB, volume = 31))

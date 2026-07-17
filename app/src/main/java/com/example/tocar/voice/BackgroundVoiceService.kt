@@ -37,7 +37,7 @@ class BackgroundVoiceService : Service(), RecognitionListener {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val handler = Handler(Looper.getMainLooper())
     private val voiceParser = VoiceCommandParser()
-    private val musicSearchEngine = MusicSearchEngine()
+    private lateinit var musicSearchEngine: MusicSearchEngine
     private val logger = PacketLogger()
 
     private lateinit var bluetoothController: AndroidBluetoothController
@@ -50,6 +50,8 @@ class BackgroundVoiceService : Service(), RecognitionListener {
 
     override fun onCreate() {
         super.onCreate()
+        val playlistCatalog = PlaylistCatalog(this)
+        musicSearchEngine = MusicSearchEngine { playlistCatalog.entries.value }
         bluetoothController = AndroidBluetoothController(this, serviceScope)
         radioRepository = RadioRepository(
             bluetoothController = bluetoothController,
@@ -268,4 +270,3 @@ class BackgroundVoiceService : Service(), RecognitionListener {
         private const val NOTIFICATION_ID = 2751
     }
 }
-
